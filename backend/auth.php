@@ -21,11 +21,13 @@ try {
     $email = $data['email'];
     $inputPassword = $data['password'];
     $role = $data['role'];
+    $username = $data['username'];
 
     // Fetch user from the database
-    $stmt = $conn->prepare("SELECT id, email, password, role FROM users WHERE email = :email AND role = :role");
+    $stmt = $conn->prepare("SELECT id, email, password, role, username FROM users WHERE email = :email AND role = :role");
     $stmt->bindParam(':email', $email);
     $stmt->bindParam(':role', $role);
+    $stmt->bindParam(':username', $username);
     $stmt->execute();
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -35,7 +37,8 @@ try {
         $_SESSION['user'] = [
             'id' => $user['id'],
             'email' => $user['email'],
-            'role' => $user['role']
+            'role' => $user['role'],
+            'username' => $user['username']
         ];
 
         echo json_encode([

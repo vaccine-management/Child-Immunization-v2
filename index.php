@@ -27,7 +27,7 @@ if (!isset($_SESSION['user']) || empty($_SESSION['user'])) {
     <div class="ml-64 mt-16 p-6">
         <!-- Welcome Message -->
         <div class="bg-gray-800 p-6 rounded-lg shadow-lg mb-6">
-            <h2 class="text-xl font-bold text-white">Welcome, <?php echo htmlspecialchars($_SESSION['user']['role']); ?>!</h2>
+        <h2 class="text-xl font-bold text-white">Welcome, <?php echo htmlspecialchars($_SESSION['user']['username']); ?></h2>
             <p class="text-gray-400">You are logged in as a <?php echo htmlspecialchars($_SESSION['user']['role']); ?>.</p>
         </div>
 
