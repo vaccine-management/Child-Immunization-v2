@@ -1,45 +1,32 @@
 <?php
-session_start(); // Move session_start() to the top
-
+session_start(); 
 include 'includes/header.php';
+include 'backend/db.php'; 
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = $_POST['email']; // Use 'email' instead of 'username'
+    $email = $_POST['email']; 
     $password = $_POST['password'];
-    $role = $_POST['role']; // Add role to the form data
+    $role = $_POST['role']; 
 
-    // Database connection details
-    $host = 'localhost';
-    $dbname = 'immunization_system';
-    $user = 'root'; // Default MySQL user in XAMPP
-    $password_db = ''; // Default MySQL password in XAMPP (empty)
+    // Fetch user from the database with plain text password comparison
+    $stmt = $conn->prepare("SELECT id, email, password, role FROM users WHERE email = :email AND password = :password AND role = :role");
+    $stmt->bindParam(':email', $email);
+    $stmt->bindParam(':password', $password);
+    $stmt->bindParam(':role', $role);
+    $stmt->execute();
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    try {
-        // Connect to MySQL
-        $conn = new PDO("mysql:host=$host;dbname=$dbname", $user, $password_db);
-        $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
-        // Fetch user from the database
-        $stmt = $conn->prepare("SELECT id, email, password, role FROM users WHERE email = :email AND role = :role");
-        $stmt->bindParam(':email', $email);
-        $stmt->bindParam(':role', $role);
-        $stmt->execute();
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($user && password_verify($password, $user['password'])) {
-            // Store user data in session
-            $_SESSION['user'] = [
-                'id' => $user['id'],
-                'email' => $user['email'],
-                'role' => $user['role']
-            ];
-            header('Location: index.php');
-            exit();
-        } else {
-            $error = "Invalid email, password, or role.";
-        }
-    } catch (PDOException $e) {
-        $error = "Database error: " . $e->getMessage();
+    if ($user) {
+        // Store user data in session
+        $_SESSION['user'] = [
+            'id' => $user['id'],
+            'email' => $user['email'],
+            'role' => $user['role']
+        ];
+        header('Location: index.php');
+        exit();
+    } else {
+        $error = "Invalid email, password, or role.";
     }
 }
 ?>
@@ -49,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login</title>
-    
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-900">
     <div class="min-h-screen flex items-center justify-center">
@@ -93,6 +80,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </svg>
                     </span>
                 </button>
+                <div class="mt-4 text-center">
+                    <a href="forgot_password.php" class="text-blue-500 hover:text-blue-400">Forgot Password?</a>
+                </div>
             </form>
         </div>
     </div>

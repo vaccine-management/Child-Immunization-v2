@@ -1,62 +1,64 @@
 <?php
-session_start(); // Start the session at the very beginning
-header('Content-Type: application/json');
+include '../backend/db.php';
 
-$host = 'localhost';
-$dbname = 'immunization_system';
-$user = 'root';
-$password = '';
+// Get the JSON input
+$input = file_get_contents('php://input');
+$data = json_decode($input, true);
+
+$response = ['status' => 'error', 'message' => ''];
 
 try {
-    $conn = new PDO("mysql:host=$host;dbname=$dbname", $user, $password);
-    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
-    // Read JSON input
-    $data = json_decode(file_get_contents('php://input'), true);
-    if (!$data || !isset($data['email']) || !isset($data['password']) || !isset($data['role'])) {
-        echo json_encode(['status' => 'error', 'message' => 'Invalid input data.']);
-        exit;
+    // Validate required fields
+    if (empty($data['email']) || empty($data['password']) || empty($data['role'])) {
+        throw new Exception('All fields are required');
     }
 
     $email = $data['email'];
-    $inputPassword = $data['password'];
+    $password = $data['password'];
     $role = $data['role'];
-    $username = $data['username'];
 
-    // Fetch user from the database
-    $stmt = $conn->prepare("SELECT id, email, password, role, username FROM users WHERE email = :email AND role = :role");
-    $stmt->bindParam(':email', $email);
-    $stmt->bindParam(':role', $role);
-    $stmt->bindParam(':username', $username);
-    $stmt->execute();
+    // Add debugging
+    error_log("Login attempt - Email: $email, Role: $role");
+
+    // Fetch user by email and role
+    $stmt = $conn->prepare("SELECT id, email, password, role, username FROM users WHERE email = ? AND role = ?");
+    $stmt->execute([$email, $role]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    // Verify password (plain text comparison in this example)
-    if ($user && $inputPassword === $user['password']) {
-        // Set session variables
+    // Debug user data from database
+    error_log("Database returned user data: " . print_r($user, true));
+
+    if ($user && $user['password'] === $password) { // Plain text password comparison
+        error_log("User authenticated successfully");
+        session_start();
+        
+        // Set session data
         $_SESSION['user'] = [
             'id' => $user['id'],
             'email' => $user['email'],
             'role' => $user['role'],
-            'username' => $user['username']
+            'username' => $user['username'] // Store the username
         ];
 
-        echo json_encode([
-            'status' => 'success',
-            'message' => 'Login successful!',
-            'user' => $_SESSION['user']
-        ]);
+        // Debug session data
+        error_log("Session data set: " . print_r($_SESSION['user'], true));
+
+        $response['status'] = 'success';
+        $response['message'] = 'Login successful';
+        $response['user'] = [
+            'username' => $user['username'],
+            'role' => $user['role']
+        ];
     } else {
-        echo json_encode([
-            'status' => 'error',
-            'message' => 'Invalid email, password, or role.'
-        ]);
+        error_log("Authentication failed for email: $email and role: $role");
+        $response['message'] = 'Invalid email, password, or role';
     }
-} catch (PDOException $e) {
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'Database error: ' . $e->getMessage()
-    ]);
+} catch (Exception $e) {
+    error_log("Login error: " . $e->getMessage());
+    $response['message'] = 'Database error: ' . $e->getMessage();
 }
-exit;
+
+// Set headers and return response
+header('Content-Type: application/json');
+echo json_encode($response);
 ?>

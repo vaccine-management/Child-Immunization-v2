@@ -4,10 +4,10 @@ const togglePassword = document.getElementById('togglePassword');
 // Toggle password visibility
 if (togglePassword && passwordInput) {
     togglePassword.addEventListener('click', () => {
-        console.log('Toggle button clicked'); // Debugging
+        console.log('Toggle button clicked'); 
         const type = passwordInput.type === 'password' ? 'text' : 'password';
         passwordInput.type = type;
-        console.log('Password input type:', passwordInput.type); // Debugging
+        console.log('Password input type:', passwordInput.type); 
         togglePassword.textContent = type === 'password' ? '👁️' : '👁️‍🗨️';
     });
 } else {
@@ -34,7 +34,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     try {
         setLoadingState(true);
 
-        const response = await fetch('http://localhost/immunization-system/backend/auth.php', {
+        const response = await fetch('http://localhost/backend/auth.php', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -44,8 +44,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
         });
 
         const responseText = await response.text();
-        console.log('Backend Response Text:', responseText); // Log the response text
-
+        console.log('Backend Response Text:', responseText); 
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -53,7 +52,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
         // Trim and parse the JSON
         const trimmedResponse = responseText.trim();
         const data = JSON.parse(trimmedResponse);
-        console.log('Backend Response:', data); // Debugging: Log backend response
+        console.log('Backend Response:', data); 
 
         if (data.status === 'success') {
             showMessage(data.message, 'success');
@@ -63,7 +62,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             showMessage(data.message || 'An error occurred. Please try again.', 'error');
         }
     } catch (error) {
-        console.error('Error during fetch or JSON parsing:', error); // Debugging: Log fetch error
+        console.error('Error during fetch or JSON parsing:', error); 
         showMessage('Server connection error. Please try again.', 'error');
     } finally {
         setLoadingState(false);
