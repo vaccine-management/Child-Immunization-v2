@@ -213,9 +213,9 @@ function formatAge($age) {
         </div>
 
         <!-- Charts Section -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6 w-auto">
             <!-- Vaccine Distribution Chart -->
-            <div class="lg:col-span-2 bg-gray-800 rounded-lg shadow-lg p-6">
+            <div class="lg:col-span-2 bg-gray-800 rounded-lg shadow-lg p-2">
                 <h3 class="text-lg font-bold text-white mb-4 flex items-center">
                     <svg class="w-5 h-5 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
@@ -225,20 +225,20 @@ function formatAge($age) {
                     </svg>
                     Vaccine Distribution
                 </h3>
-                <div class="w-full h-64">
+                <div class="w-6 h-64">
                     <canvas id="vaccineChart"></canvas>
                 </div>
             </div>
 
             <!-- Calendar View -->
-            <div class="bg-gray-800 rounded-lg shadow-lg p-6">
-                <h3 class="text-lg font-bold text-white mb-4 flex items-center justify-between">
+            <div class="bg-gray-100 rounded-lg shadow-lg p-6 mx-auto p-3">
+                <h3 class="text-sm font-bold text-white mb-4 flex items-center justify-between">
                     <div class="flex items-center">
-                        <svg class="w-5 h-5 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                        <svg class="w-1 h-5 mr-1 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" 
                                 d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                         </svg>
-                        <span>Vaccination Calendar</span>
+                        <span class="text-blue-800 text-sm">Vaccination Calendar</span>
                     </div>
                 </h3>
                 <div id="calendar"></div>
