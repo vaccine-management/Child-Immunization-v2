@@ -1,6 +1,5 @@
 <?php
 session_start();
-
 // Ensure the user is logged in and is an admin
 if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'Admin') {
     header('Location: login.php');
@@ -13,6 +12,12 @@ include 'backend/db.php';
 // Initialize variables
 $error = '';
 $success = '';
+// Get username from session
+$userName = isset($_SESSION['user']['username']) && !empty($_SESSION['user']['username']) 
+    ? $_SESSION['user']['username'] 
+    : $_SESSION['user']['email'];
+
+$userRole = $_SESSION['user']['role'] ?? 'User';
 
 // Handle form submissions for updating vaccines
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -121,6 +126,10 @@ $nurses = $conn->query("SELECT * FROM users WHERE role = 'Nurse'")->fetchAll(PDO
 
     <!-- Main Content -->
     <div class="ml-64 mt-16 p-6">
+        <div class="bg-gradient-to-r from-blue-600 to-blue-800 p-6 rounded-lg shadow-lg mb-6">
+            <h2 class="text-xl font-bold text-white">Welcome, <?php echo htmlspecialchars($userName); ?></h2>
+            <p class="text-blue-200">You are logged in as a <?php echo htmlspecialchars($userRole); ?>.</p>
+        </div>
         <div class="bg-gray-800 p-6 rounded-lg shadow-lg max-w-4xl mx-auto">
             <h2 class="text-2xl font-bold text-white mb-6">Admin Panel</h2>
 
@@ -309,7 +318,6 @@ $nurses = $conn->query("SELECT * FROM users WHERE role = 'Nurse'")->fetchAll(PDO
         </div>
     </div>
 
-    <script src="js/admin-panel.js">  
-    </script>
+    <script src="js/admin-panel.js"></script>
 </body>
 </html>

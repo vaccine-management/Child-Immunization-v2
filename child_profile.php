@@ -1,11 +1,12 @@
 <?php
-session_start();
 
 // Ensure user is logged in
-if (!isset($_SESSION['user'])) {
-    header('Location: login.php');
+session_start();
+if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'Nurse') {
+    header('Location: index.php');
     exit();
 }
+
 
 // Include database connection
 include 'backend/db.php';
