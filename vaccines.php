@@ -1,3 +1,10 @@
-<?php include 'includes/header.php'; ?>
-    <?php include 'includes/sidebar.php'; ?>
-    <?php include 'includes/navbar.php'; ?>
+<?php
+session_start(); 
+include 'includes/header.php';
+include 'backend/db.php'; 
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $email = $_POST['email']; 
+    $password = $_POST['password'];
+    $role = $_POST['role']; 
+} 

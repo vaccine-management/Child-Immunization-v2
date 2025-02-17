@@ -231,7 +231,7 @@ function formatAge($age) {
     </div>
 
     <!-- Calendar View -->
-    <div class="bg-gray-100 rounded-lg shadow-lg p-4">
+    <div class="bg-gray-800 rounded-lg shadow-lg p-4">
         <h3 class="text-sm font-bold text-white mb-3 flex items-center justify-between">
             <div class="flex items-center">
                 <svg class="w-4 h-4 mr-1 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -241,7 +241,7 @@ function formatAge($age) {
                 <span class="text-blue-800 text-sm">Vaccination Calendar</span>
             </div>
         </h3>
-        <div id="calendar" class="w-full h-64 overflow-hidden bg-white rounded"></div>
+        <div id="calendar" class="w-full h-64 overflow-hidden bg-gray-800 text-white rounded"></div>
     </div>
 </div>
 
