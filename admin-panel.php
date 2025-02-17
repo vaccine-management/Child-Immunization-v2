@@ -40,27 +40,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'Failed to update vaccine. Please try again.';
             }
         }
-    } elseif (isset($_POST['add_user'])) {
-        $userName = trim($_POST['user_name']);
-        $userEmail = trim($_POST['user_email']);
-        $userRole = trim($_POST['user_role']);
-        $userPassword = password_hash(trim($_POST['user_password']), PASSWORD_DEFAULT);
-
-        if (empty($userName) || empty($userEmail) || empty($userRole) || empty($userPassword)) {
-            $error = 'All fields are required.';
-        } else {
-            $stmt = $conn->prepare("INSERT INTO users (username, email, role, password) VALUES (?, ?, ?, ?)");
-            $stmt->bindParam(1, $userName);
-            $stmt->bindParam(2, $userEmail);
-            $stmt->bindParam(3, $userRole);
-            $stmt->bindParam(4, $userPassword);
-
-            if ($stmt->execute()) {
-                $success = 'User added successfully!';
-            } else {
-                $error = 'Failed to add user. Please try again.';
-            }
-        }
     } elseif (isset($_POST['delete_user'])) {
         $userId = $_POST['user_id'];
 
@@ -71,25 +50,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $success = 'User deleted successfully!';
         } else {
             $error = 'Failed to delete user. Please try again.';
-        }
-    } elseif (isset($_POST['add_vaccine'])) {
-        $vaccineName = trim($_POST['vaccine_name']);
-        $vaccineQuantity = trim($_POST['vaccine_quantity']);
-        $vaccineDescription = trim($_POST['vaccine_description']);
-
-        if (empty($vaccineName) || empty($vaccineQuantity)) {
-            $error = 'Vaccine name and quantity are required.';
-        } else {
-            $stmt = $conn->prepare("INSERT INTO vaccines (name, quantity, description) VALUES (?, ?, ?)");
-            $stmt->bindParam(1, $vaccineName);
-            $stmt->bindParam(2, $vaccineQuantity);
-            $stmt->bindParam(3, $vaccineDescription);
-
-            if ($stmt->execute()) {
-                $success = 'Vaccine added successfully!';
-            } else {
-                $error = 'Failed to add vaccine. Please try again.';
-            }
         }
     } elseif (isset($_POST['delete_vaccine'])) {
         $vaccineId = $_POST['vaccine_id'];
@@ -148,6 +108,7 @@ $nurses = $conn->query("SELECT * FROM users WHERE role = 'Nurse'")->fetchAll(PDO
 
             <!-- Vaccines List -->
             <h3 class="text-xl font-bold text-white mb-4">Vaccines</h3>
+            <a href="add-vaccine.php" class="bg-blue-500 text-white px-3 py-2 rounded-lg mb-4 inline-block">Add Vaccine</a>
             <table class="w-full bg-gray-700 text-white rounded-lg mb-6">
                 <thead>
                     <tr>
@@ -163,7 +124,7 @@ $nurses = $conn->query("SELECT * FROM users WHERE role = 'Nurse'")->fetchAll(PDO
                             <td class="p-3"><?php echo $vaccine['id']; ?></td>
                             <td class="p-3"><?php echo htmlspecialchars($vaccine['name']); ?></td>
                             <td class="p-3"><?php echo htmlspecialchars($vaccine['quantity']); ?></td>
-                            <td class="p-3">
+                            <td class="p-3 flex space-x-2">
                                 <button class="bg-blue-500 text-white px-3 py-1 rounded-lg" onclick="editVaccine(<?php echo $vaccine['id']; ?>, '<?php echo htmlspecialchars($vaccine['name']); ?>', '<?php echo htmlspecialchars($vaccine['quantity']); ?>')">Edit</button>
                                 <form method="POST" class="inline">
                                     <input type="hidden" name="vaccine_id" value="<?php echo $vaccine['id']; ?>">
@@ -175,26 +136,9 @@ $nurses = $conn->query("SELECT * FROM users WHERE role = 'Nurse'")->fetchAll(PDO
                 </tbody>
             </table>
 
-            <!-- Add Vaccine Form -->
-            <h3 class="text-xl font-bold text-white mb-4">Add Vaccine</h3>
-            <form method="POST" class="bg-gray-700 p-6 rounded-lg mb-6">
-                <div class="mb-4">
-                    <label for="vaccine_name" class="block text-white mb-2">Name</label>
-                    <input type="text" id="vaccine_name" name="vaccine_name" class="w-full px-3 py-2 bg-gray-800 text-white rounded-lg" required>
-                </div>
-                <div class="mb-4">
-                    <label for="vaccine_quantity" class="block text-white mb-2">Quantity</label>
-                    <input type="number" id="vaccine_quantity" name="vaccine_quantity" class="w-full px-3 py-2 bg-gray-800 text-white rounded-lg" required>
-                </div>
-                <div class="mb-4">
-                    <label for="vaccine_description" class="block text-white mb-2">Description</label>
-                    <textarea id="vaccine_description" name="vaccine_description" class="w-full px-3 py-2 bg-gray-800 text-white rounded-lg"></textarea>
-                </div>
-                <button type="submit" name="add_vaccine" class="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition duration-300">Add Vaccine</button>
-            </form>
-
             <!-- Doctors List -->
             <h3 class="text-xl font-bold text-white mb-4">Doctors</h3>
+            <a href="add-user.php" class="bg-blue-500 text-white px-3 py-2 rounded-lg mb-4 inline-block">Add Doctor/Nurse</a>
             <table class="w-full bg-gray-700 text-white rounded-lg mb-6">
                 <thead>
                     <tr>
@@ -210,7 +154,7 @@ $nurses = $conn->query("SELECT * FROM users WHERE role = 'Nurse'")->fetchAll(PDO
                             <td class="p-3"><?php echo $doctor['id']; ?></td>
                             <td class="p-3"><?php echo htmlspecialchars($doctor['username']); ?></td>
                             <td class="p-3"><?php echo htmlspecialchars($doctor['email']); ?></td>
-                            <td class="p-3">
+                            <td class="p-3 flex space-x-2">
                                 <button class="bg-blue-500 text-white px-3 py-1 rounded-lg" onclick="editUser(<?php echo $doctor['id']; ?>, '<?php echo htmlspecialchars($doctor['username']); ?>', '<?php echo htmlspecialchars($doctor['email']); ?>')">Edit</button>
                                 <form method="POST" class="inline">
                                     <input type="hidden" name="user_id" value="<?php echo $doctor['id']; ?>">
@@ -239,7 +183,7 @@ $nurses = $conn->query("SELECT * FROM users WHERE role = 'Nurse'")->fetchAll(PDO
                             <td class="p-3"><?php echo $nurse['id']; ?></td>
                             <td class="p-3"><?php echo htmlspecialchars($nurse['username']); ?></td>
                             <td class="p-3"><?php echo htmlspecialchars($nurse['email']); ?></td>
-                            <td class="p-3">
+                            <td class="p-3 flex space-x-2">
                                 <button class="bg-blue-500 text-white px-3 py-1 rounded-lg" onclick="editUser(<?php echo $nurse['id']; ?>, '<?php echo htmlspecialchars($nurse['username']); ?>', '<?php echo htmlspecialchars($nurse['email']); ?>')">Edit</button>
                                 <form method="POST" class="inline">
                                     <input type="hidden" name="user_id" value="<?php echo $nurse['id']; ?>">
@@ -250,31 +194,6 @@ $nurses = $conn->query("SELECT * FROM users WHERE role = 'Nurse'")->fetchAll(PDO
                     <?php endforeach; ?>
                 </tbody>
             </table>
-
-            <!-- Add User Form -->
-            <h3 class="text-xl font-bold text-white mb-4">Add Doctor/Nurse</h3>
-            <form method="POST" class="bg-gray-700 p-6 rounded-lg mb-6">
-                <div class="mb-4">
-                    <label for="user_name" class="block text-white mb-2">Name</label>
-                    <input type="text" id="user_name" name="user_name" class="w-full px-3 py-2 bg-gray-800 text-white rounded-lg" required>
-                </div>
-                <div class="mb-4">
-                    <label for="user_email" class="block text-white mb-2">Email</label>
-                    <input type="email" id="user_email" name="user_email" class="w-full px-3 py-2 bg-gray-800 text-white rounded-lg" required>
-                </div>
-                <div class="mb-4">
-                    <label for="user_password" class="block text-white mb-2">Password</label>
-                    <input type="password" id="user_password" name="user_password" class="w-full px-3 py-2 bg-gray-800 text-white rounded-lg" required>
-                </div>
-                <div class="mb-4">
-                    <label for="user_role" class="block text-white mb-2">Role</label>
-                    <select id="user_role" name="user_role" class="w-full px-3 py-2 bg-gray-800 text-white rounded-lg" required>
-                        <option value="Doctor">Doctor</option>
-                        <option value="Nurse">Nurse</option>
-                    </select>
-                </div>
-                <button type="submit" name="add_user" class="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition duration-300">Add User</button>
-            </form>
         </div>
     </div>
 
