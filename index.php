@@ -212,42 +212,40 @@ function formatAge($age) {
             </a>
         </div>
 
-      <!-- Charts Section -->
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 w-full">
-    <!-- Vaccine Distribution Chart -->
-    <div class="bg-gray-800 rounded-lg shadow-lg p-4">
-        <h3 class="text-lg font-bold text-white mb-4 flex items-center">
-            <svg class="w-5 h-5 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                    d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"/>
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                    d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"/>
-            </svg>
-            Vaccine Distribution
-        </h3>
-        <div class="w-full h-64">
-            <canvas id="vaccineChart"></canvas>
-        </div>
-    </div>
-
-    <!-- Calendar View -->
-    <div class="bg-gray-100 rounded-lg shadow-lg p-4">
-        <h3 class="text-sm font-bold text-white mb-3 flex items-center justify-between">
-            <div class="flex items-center">
-                <svg class="w-4 h-4 mr-1 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" 
-                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                </svg>
-                <span class="text-blue-800 text-sm">Vaccination Calendar</span>
+        <!-- Charts Section -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- Vaccine Distribution Chart -->
+            <div class="bg-gray-800 rounded-lg shadow-lg p-6">
+                <h3 class="text-lg font-bold text-white mb-4 flex items-center">
+                    <svg class="w-5 h-5 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                            d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                            d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"/>
+                    </svg>
+                    Vaccine Distribution
+                </h3>
+                <div class="w-full h-64">
+                    <canvas id="vaccineChart"></canvas>
+                </div>
             </div>
-        </h3>
-        <div id="calendar" class="w-full h-64 overflow-hidden bg-white rounded"></div>
-    </div>
-</div>
 
+            <!-- Calendar View -->
+            <div class="bg-gray-800 rounded-lg shadow-lg p-6">
+                <h3 class="text-lg font-bold text-white mb-4 flex items-center justify-between">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                        <span>Vaccination Calendar</span>
+                    </div>
+                </h3>
+                <div id="calendar"></div>
+            </div>
         </div>
 
-        <!-- Children List -->
+        <!-- Registered Children Section -->
         <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
             <div class="p-4 border-b border-gray-700">
                 <h3 class="text-lg font-bold text-white flex items-center">
@@ -259,27 +257,33 @@ function formatAge($age) {
                 </h3>
             </div>
 
-            <div class="max-h-[calc(100vh-12rem)] overflow-y-auto">
+            <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-700">
                     <thead class="bg-gray-800 sticky top-0 z-10">
                         <tr>
-                            <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-gray-400 
-                                                 uppercase tracking-wider">Child Info</th>
-                            <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-gray-400 
-                                                 uppercase tracking-wider">Gender</th>
-                            <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-gray-400 
-                                                 uppercase tracking-wider">Age & Weight</th>
-                            <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-gray-400 
-                                                 uppercase tracking-wider">Parent Details</th>
-                            <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-gray-400 
-                                                 uppercase tracking-wider">Status</th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                Child Info
+                            </th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                Gender
+                            </th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                Age & Weight
+                            </th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                Parent Details
+                            </th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                Status
+                            </th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-700">
                         <?php foreach ($registeredChildren as $child): ?>
                             <tr class="hover:bg-gray-700/50 transition duration-300 cursor-pointer"
                                 onclick="window.location.href='child_profile.php?id=<?php echo $child['id']; ?>'">
-                                <td class="px-6 py-4">
+                                <!-- Child Info -->
+                                <td class="px-4 py-4">
                                     <div class="flex items-center space-x-3">
                                         <div class="flex-shrink-0">
                                             <div class="h-10 w-10 rounded-full 
@@ -307,7 +311,9 @@ function formatAge($age) {
                                         </div>
                                     </div>
                                 </td>
-                                <td class="px-6 py-4">
+
+                                <!-- Gender -->
+                                <td class="px-4 py-4">
                                     <span class="px-2 py-1 text-xs rounded-full
                                         <?php echo $child['gender'] === 'Male' 
                                             ? 'bg-blue-500/10 text-blue-400' 
@@ -315,7 +321,9 @@ function formatAge($age) {
                                         <?php echo $child['gender']; ?>
                                     </span>
                                 </td>
-                                <td class="px-6 py-4">
+
+                                <!-- Age & Weight -->
+                                <td class="px-4 py-4">
                                     <div class="text-sm text-white">
                                         <?php echo formatAge($child['age']); ?>
                                     </div>
@@ -323,7 +331,9 @@ function formatAge($age) {
                                         <?php echo htmlspecialchars($child['weight']); ?> kg
                                     </div>
                                 </td>
-                                <td class="px-6 py-4">
+
+                                <!-- Parent Details -->
+                                <td class="px-4 py-4">
                                     <div class="text-sm text-white">
                                         <?php echo htmlspecialchars($child['parent_name']); ?>
                                     </div>
@@ -331,7 +341,9 @@ function formatAge($age) {
                                         <?php echo htmlspecialchars($child['parent_phone']); ?>
                                     </div>
                                 </td>
-                                <td class="px-6 py-4">
+
+                                <!-- Status -->
+                                <td class="px-4 py-4">
                                     <span class="px-2 py-1 text-xs rounded-full
                                         <?php
                                         switch($child['vaccination_status']) {
