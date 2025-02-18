@@ -69,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $vaccines = $conn->query("SELECT * FROM vaccines")->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch doctors and nurses
-$doctors = $conn->query("SELECT * FROM users WHERE role = 'Doctor'")->fetchAll(PDO::FETCH_ASSOC);
+$doctors = $conn->query("SELECT * FROM users WHERE role = 'Admin'")->fetchAll(PDO::FETCH_ASSOC);
 $nurses = $conn->query("SELECT * FROM users WHERE role = 'Nurse'")->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
@@ -139,7 +139,7 @@ $nurses = $conn->query("SELECT * FROM users WHERE role = 'Nurse'")->fetchAll(PDO
             </table>
 
             <!-- Doctors List -->
-            <h3 class="text-xl font-bold text-white mb-4">Doctors</h3>
+            <h3 class="text-xl font-bold text-white mb-4">Admin</h3>
             <a href="add-user.php" class="bg-blue-500 text-white px-3 py-2 rounded-lg mb-4 inline-block">Add Doctor/Nurse</a>
             <table class="w-full bg-gray-700 text-white rounded-lg mb-6">
                 <thead>
