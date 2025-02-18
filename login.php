@@ -23,6 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'email' => $user['email'],
             'role' => $user['role']
         ];
+        $_SESSION['success'] = "Login successful! Welcome back.";
         header('Location: index.php');
         exit();
     } else {
@@ -40,11 +41,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
 </head>
 <body class="bg-gradient-to-br from-gray-900 to-gray-800 min-h-screen">
+    <!-- Success Message -->
+    <?php if (isset($_SESSION['success'])): ?>
+    <div id="successMessage" class="fixed top-4 right-4 z-50 bg-green-500/10 border-l-4 border-green-500 text-green-300 p-4 rounded-lg shadow-lg transition-all duration-500 ease-in-out transform">
+        <div class="flex items-center">
+            <i class="fas fa-check-circle mr-2"></i>
+            <?php echo $_SESSION['success']; ?>
+        </div>
+    </div>
+    <?php 
+    unset($_SESSION['success']);
+    endif; 
+    ?>
+
     <div class="min-h-screen flex items-center justify-center px-4 sm:px-6 lg:px-8">
         <div class="max-w-md w-full">
             <!-- Logo and Title -->
             <div class="text-center mb-8">
-                
                 <h2 class="text-3xl font-extrabold text-white mb-2">Welcome Back</h2>
                 <p class="text-gray-400">Sign in to your account</p>
             </div>
@@ -152,6 +165,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
-    <script src="js/login.js"></script>
+    <script>
+        // Toggle password visibility
+        document.getElementById('togglePassword').addEventListener('click', function() {
+            const passwordInput = document.getElementById('password');
+            const icon = this.querySelector('i');
+            
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                passwordInput.type = 'password';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
+        });
+
+        // Form submission and loading state
+        document.getElementById('loginForm').addEventListener('submit', function() {
+            document.getElementById('loginText').classList.add('hidden');
+            document.getElementById('loadingSpinner').classList.remove('hidden');
+        });
+
+        // Success message animation
+        document.addEventListener('DOMContentLoaded', function() {
+            const successMessage = document.getElementById('successMessage');
+            if (successMessage) {
+                setTimeout(() => {
+                    successMessage.style.opacity = '0';
+                    successMessage.style.transform = 'translateX(100%)';
+                    setTimeout(() => {
+                        successMessage.remove();
+                    }, 500);
+                }, 3000);
+            }
+        });
+    </script>
 </body>
 </html>
