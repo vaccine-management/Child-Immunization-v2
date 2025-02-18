@@ -82,6 +82,7 @@ $nurses = $conn->query("SELECT * FROM users WHERE role = 'Nurse'")->fetchAll(PDO
 </head>
 <body class="bg-gray-900">
     <?php include 'includes/header.php'; ?>
+    <?php include 'includes/navbar.php'; ?>
     <?php include 'includes/sidebar.php'; ?>
 
     <!-- Main Content -->
