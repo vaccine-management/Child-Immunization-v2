@@ -5,50 +5,128 @@ if (!isset($_SESSION['user'])) {
     exit();
 }
 
-// Define $userName and $profileImage
 $userName = isset($_SESSION['user']['username']) && !empty($_SESSION['user']['username']) 
     ? $_SESSION['user']['username'] 
     : $_SESSION['user']['email'];
 $profileImage = $_SESSION['user']['profile_image'] ?? null;
 ?>
-
 <!-- Fixed Navbar -->
-<nav class="fixed top-0 left-0 w-full bg-gray-800 shadow-lg z-50">
-    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+<nav class="fixed top-0 left-0 right-0 bg-gray-800 border-b border-gray-700 z-50">
+    <!-- Main Navbar -->
+    <div class="container mx-auto px-4">
         <div class="flex items-center justify-between h-16">
-            <!-- Logo and System Name -->
-            <div class="flex-shrink-0 flex items-center">
-                <svg class="h-8 w-8 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l9-5-9-5-9 5 9 5z"/>
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z"/>
-                </svg>
-                <span class="ml-2 text-xl font-bold text-white">CHILD IMMUNIZATION SYSTEM</span>
+            <!-- Logo Section -->
+            <div class="flex items-center space-x-8">
+                <div class="flex items-center">
+                    <img src="assets/login.jpg" alt="Logo" class="h-10 w-10">
+                    <div class="ml-3">
+                        <h1 class="text-xl font-bold text-white tracking-wide">CHILD IMMUNIZATION</h1>
+                        <p class="text-xs text-gray-400">Healthcare Management System</p>
+                    </div>
+                </div>
             </div>
 
-            <!-- Profile Dropdown -->
-            <div class="ml-3 relative">
-                <div>
-                    <button id="profileDropdown" class="max-w-xs bg-gray-800 rounded-full flex items-center text-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-white" aria-expanded="false">
-                        <span class="sr-only">Open user menu</span>
-                        <?php if ($profileImage): ?>
-                            <img class="h-8 w-8 rounded-full object-cover" 
-                                 src="<?php echo htmlspecialchars($profileImage); ?>" 
-                                 alt="Profile">
-                        <?php else: ?>
-                            <div class="h-8 w-8 rounded-full bg-gray-700 flex items-center justify-center">
-                                <i class="fas fa-user text-gray-400"></i>
-                            </div>
-                        <?php endif; ?>
+                        <!-- Right Side Controls -->
+            <div class="flex items-center space-x-6">
+                <!-- Notifications -->
+                <div class="relative">
+                    <button class="relative p-2 rounded-lg hover:bg-gray-700/50 text-gray-400 hover:text-white 
+                                   focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800
+                                   transition-all duration-200"
+                            aria-label="View notifications">
+                        <i class="fas fa-bell text-xl"></i>
+                        <!-- Notification Badge -->
+                        <span class="absolute top-1.5 right-1.5 flex h-2.5 w-2.5">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
+                        </span>
+                        <!-- Tooltip -->
+                        <span class="absolute -bottom-12 left-1/2 -translate-x-1/2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+                            Notifications
+                        </span>
                     </button>
+            
+                    <!-- Notifications Dropdown (Hidden by default) -->
+                    <div id="notificationsDropdown" class="hidden absolute right-0 mt-2 w-80 rounded-lg bg-gray-800 border border-gray-700 shadow-lg py-1">
+                        <div class="px-4 py-3 border-b border-gray-700">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-sm font-semibold text-white">Notifications</h3>
+                                <span class="text-xs text-blue-400 hover:text-blue-300 cursor-pointer">Mark all as read</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Sample Notifications -->
+                        <div class="max-h-96 overflow-y-auto">
+                            <div class="px-4 py-3 hover:bg-gray-700/50 border-b border-gray-700/50 cursor-pointer transition-colors duration-200">
+                                <div class="flex items-start gap-3">
+                                    <div class="flex-shrink-0">
+                                        <div class="h-8 w-8 rounded-full bg-blue-500/10 flex items-center justify-center">
+                                            <i class="fas fa-syringe text-blue-400"></i>
+                                        </div>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <p class="text-sm text-white font-medium">Upcoming Vaccination</p>
+                                        <p class="text-xs text-gray-400 mt-0.5">Child ID #1234 is due for BCG vaccine tomorrow</p>
+                                        <p class="text-xs text-gray-500 mt-1">2 hours ago</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Add more notification items here -->
+                        </div>
+            
+                        <!-- View All Link -->
+                        <a href="notifications.php" class="block px-4 py-3 text-sm text-center text-blue-400 hover:text-blue-300 border-t border-gray-700">
+                            View all notifications
+                        </a>
+                    </div>
                 </div>
 
-                <!-- Dropdown Menu -->
-                <div id="dropdownMenu" class="hidden origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg py-1 bg-gray-800 ring-1 ring-black ring-opacity-5 focus:outline-none" role="menu" aria-orientation="vertical" aria-labelledby="user-menu-button" tabindex="-1">
-                    <div class="px-4 py-2 text-xs text-gray-400">
-                        Signed in as <br><strong class="text-white"><?php echo htmlspecialchars($userName); ?></strong>
+                
+
+                <!-- Profile Dropdown -->
+                <div class="relative">
+                    <button id="profileDropdown" 
+                            class="flex items-center space-x-3 bg-gray-700 hover:bg-gray-600 py-2 px-4 rounded-lg transition-all duration-200">
+                        <div class="flex items-center space-x-3">
+                            <?php if ($profileImage): ?>
+                                <img class="h-8 w-8 rounded-full object-cover ring-2 ring-blue-500" 
+                                     src="<?php echo htmlspecialchars($profileImage); ?>" 
+                                     alt="Profile">
+                            <?php else: ?>
+                                <div class="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center ring-2 ring-blue-500">
+                                    <i class="fas fa-user text-white"></i>
+                                </div>
+                            <?php endif; ?>
+                            <div class="flex flex-col items-start">
+                                <span class="text-sm font-medium text-white"><?php echo htmlspecialchars($userName); ?></span>
+                                <span class="text-xs text-gray-400"><?php echo $_SESSION['user']['role']; ?></span>
+                            </div>
+                            <i class="fas fa-chevron-down text-gray-400"></i>
+                        </div>
+                    </button>
+
+                    <!-- Enhanced Dropdown Menu -->
+                    <div id="dropdownMenu" 
+                         class="hidden absolute right-0 mt-2 w-64 rounded-lg bg-gray-700 border border-gray-600 shadow-lg py-1">
+                        <div class="px-4 py-3 border-b border-gray-600">
+                            <p class="text-sm text-gray-400">Signed in as</p>
+                            <p class="text-sm font-medium text-white truncate"><?php echo htmlspecialchars($userName); ?></p>
+                        </div>
+                        
+                        <div class="py-1">
+                            <a href="profile.php" class="group flex items-center px-4 py-2 text-sm text-gray-300 hover:bg-gray-600">
+                                <i class="fas fa-user-circle w-5 mr-3 text-gray-400 group-hover:text-blue-500"></i>
+                                Your Profile
+                            </a>
+                        </div>
+                        
+                        <div class="py-1 border-t border-gray-600">
+                            <a href="logout.php" class="group flex items-center px-4 py-2 text-sm text-red-400 hover:bg-gray-600">
+                                <i class="fas fa-sign-out-alt w-5 mr-3 group-hover:text-red-500"></i>
+                                Sign out
+                            </a>
+                        </div>
                     </div>
-                    <a href="profile.php" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700" role="menuitem" tabindex="-1">Your Profile</a>
-                    <a href="logout.php" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700" role="menuitem" tabindex="-1">Sign out</a>
                 </div>
             </div>
         </div>
@@ -56,19 +134,78 @@ $profileImage = $_SESSION['user']['profile_image'] ?? null;
 </nav>
 
 <script>
-    // Toggle dropdown menu
-    document.getElementById('profileDropdown').addEventListener('click', function(event) {
-        event.stopPropagation();
-        var dropdownMenu = document.getElementById('dropdownMenu');
-        dropdownMenu.classList.toggle('hidden');
-    });
+// DOM Elements
+const elements = {
+    profileDropdown: document.getElementById('profileDropdown'),
+    dropdownMenu: document.getElementById('dropdownMenu'),
+    notificationBtn: document.querySelector('[aria-label="View notifications"]'),
+    notificationsDropdown: document.getElementById('notificationsDropdown'),
+    searchInput: document.querySelector('input[type="text"]')
+};
 
-    // Close dropdown when clicking outside
-    document.addEventListener('click', function(event) {
-        var dropdownMenu = document.getElementById('dropdownMenu');
-        var profileDropdown = document.getElementById('profileDropdown');
-        if (!profileDropdown.contains(event.target)) {
-            dropdownMenu.classList.add('hidden');
+// Animation Classes
+const classes = {
+    hidden: 'hidden',
+    visible: ['transform', 'transition-all', 'duration-200', 'opacity-100', 'scale-100'],
+    invisible: ['opacity-0', 'scale-95']
+};
+
+// Utility Functions
+const utils = {
+    toggleDropdownVisibility: function(dropdown, show) {
+        if (show) {
+            dropdown.classList.remove(classes.hidden);
+            dropdown.classList.add(...classes.visible);
+            dropdown.classList.remove(...classes.invisible);
+        } else {
+            dropdown.classList.add(classes.hidden);
+            dropdown.classList.remove(...classes.visible);
+            dropdown.classList.add(...classes.invisible);
         }
-    });
+    }
+};
+
+// Event Handlers
+const handlers = {
+    profileDropdownClick: function(event) {
+        event.stopPropagation();
+        const isHidden = elements.dropdownMenu.classList.contains(classes.hidden);
+        utils.toggleDropdownVisibility(elements.dropdownMenu, isHidden);
+    },
+
+    notificationClick: function(event) {
+        event.stopPropagation();
+        elements.notificationsDropdown.classList.toggle(classes.hidden);
+    },
+
+    searchShortcut: function(event) {
+        if ((event.ctrlKey || event.metaKey) && event.key === 'k') {
+            event.preventDefault();
+            elements.searchInput.focus();
+        }
+    },
+
+    documentClick: function(event) {
+        // Close profile dropdown if clicking outside
+        if (!elements.profileDropdown.contains(event.target)) {
+            utils.toggleDropdownVisibility(elements.dropdownMenu, false);
+        }
+
+        // Close notifications dropdown if clicking outside
+        if (!elements.notificationBtn.contains(event.target)) {
+            elements.notificationsDropdown.classList.add(classes.hidden);
+        }
+    }
+};
+
+// Initialize Event Listeners
+function initializeEventListeners() {
+    elements.profileDropdown.addEventListener('click', handlers.profileDropdownClick);
+    elements.notificationBtn.addEventListener('click', handlers.notificationClick);
+    document.addEventListener('keydown', handlers.searchShortcut);
+    document.addEventListener('click', handlers.documentClick);
+}
+
+// Initialize when DOM is fully loaded
+document.addEventListener('DOMContentLoaded', initializeEventListeners);
 </script>

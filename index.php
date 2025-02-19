@@ -58,6 +58,7 @@ foreach ($upcomingVaccinations as $vaccination) {
     $groupedVaccinations[$date][] = $vaccination;
 }
 
+
 // Fetch vaccine distribution data for the chart
 $stmt = $conn->query("
     SELECT vaccine_name, COUNT(*) as count 
@@ -108,6 +109,7 @@ function formatAge($age) {
     $years = floor($age / 12);
     return $years . " year" . ($years > 1 ? "s" : "");
 }
+
 ?>
 
 <!DOCTYPE html>
@@ -357,6 +359,7 @@ function formatAge($age) {
     <?php include 'includes/sidebar.php'; ?>
     <?php include 'includes/navbar.php'; ?>
 
+    
     <!-- Main Content -->
     <div class="ml-64 mt-16 p-6 space-y-6">
         <!-- Welcome Banner -->
@@ -598,7 +601,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Prepare events for the calendar
     const eventsByDate = <?php echo json_encode(array_map(function($date, $vaccinations) {
         return [
-            'count' => count($vaccinations),
+            'count' => count($vaccinations), // Number of vaccines scheduled for this date
             'details' => array_map(function($vaccination) {
                 return [
                     'vaccine' => $vaccination['vaccine_name'],
@@ -666,7 +669,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 borderColor: 'rgba(255, 255, 255, 0.1)'
             }]
         },
-               // Update both chart configurations to remove title plugin
         options: {
             responsive: true,
             maintainAspectRatio: false,
@@ -705,7 +707,7 @@ document.addEventListener('DOMContentLoaded', function() {
             weekday: 'narrow'
         },
         events: Object.entries(eventsByDate).map(([date, data]) => ({
-            title: `${data.count}`,
+            title: `${data.count} Vaccines`, // Display the count of vaccines
             start: date,
             extendedProps: {
                 details: data.details
@@ -722,7 +724,7 @@ document.addEventListener('DOMContentLoaded', function() {
         eventDidMount: function(info) {
             tippy(info.el, {
                 content: `<div class="p-2">
-                    <div class="font-semibold mb-1">${info.event.title} vaccinations</div>
+                    <div class="font-semibold mb-1">${info.event.title}</div>
                     ${info.event.extendedProps.details.map(d => 
                         `<div class="text-xs">${d.vaccine} - ${d.time}</div>`
                     ).join('')}
