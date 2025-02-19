@@ -38,9 +38,9 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                         <i class="fas fa-users w-5 h-5 mr-3"></i>
                         Users
                     </a>
-                    <a href="vaccines.php" 
-                       class="flex items-center px-4 py-2.5 text-sm font-medium rounded-lg <?php echo $currentPage === 'users.php' ? 'bg-gray-700 text-white' : 'text-gray-300 hover:bg-gray-700 hover:text-white'; ?> transition-all duration-200">
-                        <i class="fas fa-users w-5 h-5 mr-3"></i>
+                                       <a href="vaccines.php" 
+                       class="flex items-center px-4 py-2.5 text-sm font-medium rounded-lg <?php echo $currentPage === 'vaccines.php' ? 'bg-gray-700 text-white' : 'text-gray-300 hover:bg-gray-700 hover:text-white'; ?> transition-all duration-200">
+                        <i class="fas fa-syringe w-5 h-5 mr-3"></i>
                         Vaccines
                     </a>
                     <a href="settings.php" 

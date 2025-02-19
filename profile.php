@@ -195,9 +195,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="mt-6 bg-gray-800 shadow-xl rounded-xl p-6">
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-semibold text-gray-200">Account Security</h3>
-                    <a href="#" class="text-blue-400 hover:text-blue-300 text-sm font-medium">
-                        <i class="fas fa-key mr-1"></i> Change Password
-                    </a>
                 </div>
                 <p class="text-gray-400 text-sm">
                     Last login: <?php echo date('F j, Y, g:i a'); ?>
