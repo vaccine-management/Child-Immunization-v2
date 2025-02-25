@@ -5,9 +5,28 @@ if (!isset($_SESSION['user'])) {
     exit();
 }
 
-$userName = isset($_SESSION['user']['username']) && !empty($_SESSION['user']['username']) 
-    ? $_SESSION['user']['username'] 
-    : $_SESSION['user']['email'];
+// Prepare and execute a query to fetch user details from the database
+try {
+    // Use username from the database as confirmed by the user
+    $stmt = $conn->prepare("SELECT id, email, username FROM users WHERE id = ?");
+    $stmt->execute([$_SESSION['user']['id']]);
+    $userDetails = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    // Use username as the display name, fallback to email if username is not available
+    if (!empty($userDetails['username'])) {
+        $displayName = $userDetails['username'];
+    } else {
+        $displayName = $userDetails['email'];
+    }
+    
+    // Store in session for future use
+    $_SESSION['user']['display_name'] = $displayName;
+    
+} catch (PDOException $e) {
+    // In case of database error, fall back to email
+    $displayName = $_SESSION['user']['email'];
+}
+
 $profileImage = $_SESSION['user']['profile_image'] ?? null;
 ?>
 <!-- Fixed Navbar -->
@@ -106,7 +125,7 @@ $profileImage = $_SESSION['user']['profile_image'] ?? null;
                             <?php endif; ?>
                             <div class="flex flex-col items-start">
                                 <span class="text-sm font-medium text-white group-hover:text-blue-400 transition-colors duration-200">
-                                    <?php echo htmlspecialchars($userName); ?>
+                                <?php echo htmlspecialchars($displayName); ?>
                                 </span>
                                 <span class="text-xs text-gray-400"><?php echo $_SESSION['user']['role']; ?></span>
                             </div>

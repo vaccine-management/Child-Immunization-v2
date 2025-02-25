@@ -13,19 +13,33 @@ if (!isset($_SESSION['user'])) {
 include 'backend/db.php';
 
 // Prepare and execute a query to fetch user details from the database
-$stmt = $conn->prepare("SELECT username, email FROM users WHERE id = ?");
-$stmt->execute([$_SESSION['user']['id']]);
-$userDetails = $stmt->fetch(PDO::FETCH_ASSOC);
-
-// Determine the username to display, fallback to email if username is not available
-$userName = !empty($userDetails['username']) ? $userDetails['username'] : $userDetails['email'];
+try {
+    // Use username from the database as confirmed by the user
+    $stmt = $conn->prepare("SELECT id, email, username FROM users WHERE id = ?");
+    $stmt->execute([$_SESSION['user']['id']]);
+    $userDetails = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    // Use username as the display name, fallback to email if username is not available
+    if (!empty($userDetails['username'])) {
+        $displayName = $userDetails['username'];
+    } else {
+        $displayName = $userDetails['email'];
+    }
+    
+    // Store in session for future use
+    $_SESSION['user']['display_name'] = $displayName;
+    
+} catch (PDOException $e) {
+    // In case of database error, fall back to email
+    $displayName = $_SESSION['user']['email'];
+}
 
 // Fetch dashboard statistics
 $stmt = $conn->query("
     SELECT 
         (SELECT COUNT(*) FROM children) as total_children,
         (SELECT COUNT(*) FROM vaccinations WHERE scheduled_date >= CURDATE() AND status = 'Scheduled') as upcoming_vaccines,
-        (SELECT COUNT(*) FROM vaccines) as total_vaccines
+        (SELECT COUNT(DISTINCT vaccine_name) FROM vaccinations) as total_vaccines
 ");
 $stats = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -68,29 +82,29 @@ $stmt = $conn->query("
 $vaccineDistribution = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch registered children with vaccination status
-$stmt = $conn->query("
-    SELECT DISTINCT 
-        c.child_id, 
-        c.full_name, 
-        c.date_of_birth,
-        c.birth_weight as weight,
-        c.gender, 
-        c.guardian_name as parent_name,
-        c.phone as parent_phone,
-        (
-            SELECT COUNT(*) 
-            FROM vaccinations v 
-            WHERE v.child_id = c.child_id AND v.status = 'Taken'
-        ) as taken_vaccines,
-        TIMESTAMPDIFF(MONTH, c.date_of_birth, CURDATE()) as age_months
-    FROM children c
-    ORDER BY c.child_id DESC
-");
+$stmt = $conn->query("SELECT DISTINCT 
+    c.child_id, 
+    c.full_name, 
+    c.date_of_birth,
+    c.birth_weight as weight,
+    c.gender, 
+    c.guardian_name as parent_name,
+    c.phone as parent_phone,
+    (SELECT COUNT(*) FROM vaccinations v WHERE v.child_id = c.child_id AND v.status = 'Taken') as taken_vaccines,
+    TIMESTAMPDIFF(MONTH, c.date_of_birth, CURDATE()) as age_months
+FROM children c
+ORDER BY c.child_id DESC");
+
 $registeredChildren = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Get total required vaccines
-$stmt = $conn->query("SELECT COUNT(*) as total FROM vaccines");
+$stmt = $conn->query("SELECT COUNT(DISTINCT vaccine_name) as total FROM vaccinations");
 $totalRequiredVaccines = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+
+// If no vaccines have been recorded yet, set a minimum value
+if ($totalRequiredVaccines == 0) {
+    $totalRequiredVaccines = 1; 
+}
 
 // Calculate vaccination status for each child
 foreach ($registeredChildren as &$child) {
@@ -370,6 +384,33 @@ function formatAge($ageMonths) {
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-screen">
+    <?php if (isset($_SESSION['login_success'])): ?>
+        <div id="loginSuccess" class="fixed top-20 right-4 z-50 bg-green-600 text-white px-6 py-3 rounded-lg shadow-xl animate__animated animate__fadeInRight flex items-center">
+            <i class="fas fa-check-circle mr-3 text-2xl"></i>
+            <div>
+                <h3 class="font-bold">Login Successful!</h3>
+                <p class="text-sm">Welcome back to the Child Immunization System.</p>
+            </div>
+            <button onclick="this.parentElement.remove()" class="ml-4 text-white hover:text-green-200">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <script>
+            // Auto-remove the notification after 5 seconds
+            setTimeout(() => {
+                const notification = document.getElementById('loginSuccess');
+                if (notification) {
+                    notification.classList.replace('animate__fadeInRight', 'animate__fadeOutRight');
+                    setTimeout(() => {
+                        notification.remove();
+                    }, 1000);
+                }
+            }, 5000);
+        </script>
+        
+        <?php unset($_SESSION['login_success']); // Remove the flag so it doesn't show again on refresh ?>
+    <?php endif; ?>
     <?php include 'includes/header.php'; ?>
     <?php include 'includes/sidebar.php'; ?>
     <?php include 'includes/navbar.php'; ?>
@@ -381,7 +422,7 @@ function formatAge($ageMonths) {
         <div class="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl shadow-xl p-8">
             <div class="flex items-center justify-between">
                 <div>
-                    <h2 class="text-2xl font-bold text-white mb-2">Welcome back, <?php echo htmlspecialchars($userName); ?>!</h2>
+                    <h2 class="text-2xl font-bold text-white mb-2">Welcome back, <?php echo htmlspecialchars($displayName); ?>!</h2>
                     <p class="text-blue-100 text-lg">Here's what's happening with your immunization program today.</p>
                 </div>
                 <div class="hidden md:block">
@@ -548,7 +589,7 @@ function formatAge($ageMonths) {
                                                 <?php echo htmlspecialchars($child['full_name']); ?>
                                             </div>
                                             <div class="text-xs text-gray-400">
-                                                ID: #<?php echo $child['child_id']; ?>
+                                                ID:<?php echo $child['child_id']; ?>
                                             </div>
                                         </div>
                                     </div>

@@ -70,17 +70,52 @@ $stmt->bindParam(':child_id', $childId);
 $stmt->execute();
 $vaccinations = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Calculate vaccination progress
-$stmt = $conn->query("SELECT COUNT(*) FROM vaccines");
-$totalVaccines = $stmt->fetchColumn();
+// Calculate vaccination progress without using the vaccines table
 $takenVaccines = count(array_filter($vaccinations, function($v) {
     return $v['status'] === 'Taken';
 }));
-$progress = ($totalVaccines > 0) ? ($takenVaccines / $totalVaccines) * 100 : 0;
 
-// Fetch vaccine options
-$stmt = $conn->query("SELECT name FROM vaccines ORDER BY name");
+// Get distinct vaccine names from vaccinations table for progress calculation
+$stmt = $conn->query("SELECT COUNT(DISTINCT vaccine_name) FROM vaccinations");
+$totalVaccineTypes = $stmt->fetchColumn();
+
+// Set a default value if no vaccines found to avoid division by zero
+if ($totalVaccineTypes == 0) {
+    $totalVaccineTypes = 1;
+    $progress = 0;
+} else {
+    // Calculate progress based on how many unique vaccines have been taken
+    $stmt = $conn->query("SELECT COUNT(DISTINCT vaccine_name) FROM vaccinations WHERE status = 'Taken' AND child_id = '$childId'");
+    $uniqueTakenVaccines = $stmt->fetchColumn();
+    $progress = ($uniqueTakenVaccines / $totalVaccineTypes) * 100;
+}
+
+// Get vaccine options from existing vaccinations instead of vaccines table
+$stmt = $conn->query("SELECT DISTINCT vaccine_name FROM vaccinations ORDER BY vaccine_name");
 $vaccineOptions = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+// Add default vaccines if none found in the system
+if (empty($vaccineOptions)) {
+    $vaccineOptions = [
+        'BCG',
+        'OPV 0',
+        'OPV 1',
+        'OPV 2',
+        'OPV 3',
+        'Pentavalent 1',
+        'Pentavalent 2',
+        'Pentavalent 3',
+        'Rotavirus 1',
+        'Rotavirus 2',
+        'PCV 1',
+        'PCV 2',
+        'PCV 3',
+        'IPV',
+        'Measles',
+        'Yellow Fever',
+        'Vitamin A'
+    ];
+}
 
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -626,11 +661,11 @@ if (isset($_GET['success'])) {
         </div>
 
         <!-- Vaccination Management Section -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-            <!-- Left Column - Progress & Next Vaccine -->
-            <div class="lg:col-span-1 space-y-6">
-                <!-- Vaccination Progress Card -->
-                <div class="bg-gradient-to-br from-blue-600/10 to-blue-800/10 border border-blue-500/20 rounded-xl p-6">
+        <div class="mt-6">
+            <!-- Top Row - Progress & Actions -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                <!-- Progress Card -->
+                <div class="bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700/50 rounded-xl p-6 transform transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/5">
                     <h2 class="text-xl font-bold text-white flex items-center mb-6">
                         <svg class="w-6 h-6 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
@@ -639,19 +674,43 @@ if (isset($_GET['success'])) {
                         Vaccination Progress
                     </h2>
                     
-                    <!-- Circular Progress Indicator -->
+                    <!-- Modern Circular Progress Indicator -->
                     <div class="flex justify-center mb-6">
-                        <div class="relative">
-                            <svg class="w-32 h-32 transform -rotate-90">
-                                <circle cx="64" cy="64" r="56" stroke="currentColor" stroke-width="8" fill="transparent" 
-                                    class="text-gray-700"/>
-                                <circle cx="64" cy="64" r="56" stroke="currentColor" stroke-width="8" fill="transparent"
-                                    stroke-dasharray="352.56" stroke-dashoffset="<?php echo 352.56 - ($progress * 352.56 / 100); ?>"
-                                    class="text-blue-500 transition-all duration-1000"/>
+                        <div class="relative w-40 h-40">
+                            <!-- Background Circle -->
+                            <svg class="w-full h-full" viewBox="0 0 100 100">
+                                <circle 
+                                    cx="50" cy="50" r="40" 
+                                    stroke="#1E293B" 
+                                    stroke-width="8" 
+                                    fill="none" 
+                                />
+                                
+                                <!-- Progress Circle with Gradient -->
+                                <circle 
+                                    cx="50" cy="50" r="40" 
+                                    stroke="url(#blue-gradient)" 
+                                    stroke-width="8" 
+                                    fill="none" 
+                                    stroke-linecap="round"
+                                    stroke-dasharray="<?php echo 2 * M_PI * 40; ?>" 
+                                    stroke-dashoffset="<?php echo 2 * M_PI * 40 * (1 - $progress / 100); ?>" 
+                                    transform="rotate(-90 50 50)"
+                                />
+                                
+                                <!-- Define the gradient -->
+                                <defs>
+                                    <linearGradient id="blue-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                        <stop offset="0%" stop-color="#3B82F6" />
+                                        <stop offset="100%" stop-color="#60A5FA" />
+                                    </linearGradient>
+                                </defs>
                             </svg>
-                            <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center">
+                            
+                            <!-- Center Text -->
+                            <div class="absolute inset-0 flex flex-col items-center justify-center">
                                 <span class="text-3xl font-bold text-white"><?php echo round($progress); ?>%</span>
-                                <span class="block text-sm text-blue-400">Complete</span>
+                                <span class="text-xs text-gray-400">Complete</span>
                             </div>
                         </div>
                     </div>
@@ -659,190 +718,214 @@ if (isset($_GET['success'])) {
                     <div class="text-center">
                         <p class="text-gray-400 text-sm">
                             <span class="text-blue-400 font-semibold"><?php echo $takenVaccines; ?></span> of 
-                            <span class="text-blue-400 font-semibold"><?php echo $totalVaccines; ?></span> vaccines completed
+                            <span class="text-blue-400 font-semibold"><?php echo $totalVaccineTypes; ?></span> vaccines completed
                         </p>
                     </div>
                 </div>
 
-                <!-- Next Scheduled Vaccine -->
-                <?php if (!empty($nextScheduled)) { 
-                    $next = reset($nextScheduled); ?>
-                <div class="bg-gradient-to-br from-purple-600/10 to-purple-800/10 border border-purple-500/20 rounded-xl p-6">
-                    <h3 class="text-lg font-semibold text-white flex items-center mb-4">
-                        <svg class="w-5 h-5 mr-2 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                        </svg>
-                        Next Vaccination
-                    </h3>
-                    <div class="space-y-3">
-                        <div class="flex items-center">
-                            <div class="w-10 h-10 rounded-full bg-purple-500/10 flex items-center justify-center mr-3">
-                                <svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <!-- Record and Schedule Cards -->
+                <div class="lg:col-span-2">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Record Vaccine Card -->
+                        <div class="bg-gradient-to-br from-gray-800 to-gray-900 border border-green-500/20 rounded-xl p-6 transform transition-all duration-300 hover:shadow-xl hover:shadow-green-500/5">
+                            <h2 class="text-xl font-bold text-white flex items-center mb-6">
+                                <svg class="w-6 h-6 mr-2 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                        d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"/>
+                                        d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                 </svg>
-                            </div>
-                            <div>
-                                <h4 class="text-white font-medium"><?php echo htmlspecialchars($next['vaccine_name']); ?></h4>
-                                <p class="text-purple-400 text-sm">
-                                    <?php echo date('F j, Y', strtotime($next['scheduled_date'])); ?>
-                                    at <?php echo $next['formatted_time']; ?>
-                                </p>
-                            </div>
+                                Record Vaccine
+                            </h2>
+                            
+                            <form method="POST" class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-400 mb-2">Select Vaccine</label>
+                                    <div class="relative">
+                                        <select name="vaccine_name" required 
+                                                class="block w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
+                                                       shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500/50
+                                                       transition-colors appearance-none">
+                                            <option value="">-- Select Vaccine --</option>
+                                            <?php foreach ($vaccineOptions as $vaccine): ?>
+                                                <option value="<?php echo htmlspecialchars($vaccine); ?>">
+                                                    <?php echo htmlspecialchars($vaccine); ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <button type="submit" name="record_vaccine" 
+                                            class="w-full flex items-center justify-center space-x-2 px-4 py-3 
+                                                   bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700
+                                                   text-white font-medium rounded-lg transition-all duration-200 
+                                                   focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        </svg>
+                                        <span>Record as Taken</span>
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- Schedule Vaccine Card -->
+                        <div class="bg-gradient-to-br from-gray-800 to-gray-900 border border-blue-500/20 rounded-xl p-6 transform transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/5">
+                            <h2 class="text-xl font-bold text-white flex items-center mb-6">
+                                <svg class="w-6 h-6 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                </svg>
+                                Schedule Vaccine
+                            </h2>
+                            
+                            <form method="POST" class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-400 mb-2">Select Vaccine</label>
+                                    <div class="relative">
+                                        <select name="vaccine_name" required 
+                                                class="block w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
+                                                       shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50
+                                                       transition-colors appearance-none">
+                                            <option value="">-- Select Vaccine --</option>
+                                            <?php foreach ($vaccineOptions as $vaccine): ?>
+                                                <option value="<?php echo htmlspecialchars($vaccine); ?>">
+                                                    <?php echo htmlspecialchars($vaccine); ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-400 mb-2">Date</label>
+                                        <input type="date" name="scheduled_date" required min="<?php echo date('Y-m-d'); ?>"
+                                               class="block w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
+                                                      shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50
+                                                      transition-colors">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-400 mb-2">Time</label>
+                                        <input type="time" name="scheduled_time" required
+                                               class="block w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
+                                                      shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50
+                                                      transition-colors">
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-400 mb-2">Notes (Optional)</label>
+                                    <textarea name="notes" rows="2" 
+                                              class="block w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
+                                                     shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50
+                                                     transition-colors"></textarea>
+                                </div>
+                                
+                                <div>
+                                    <button type="submit" name="schedule_vaccine" 
+                                            class="w-full flex items-center justify-center space-x-2 px-4 py-3 
+                                                   bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700
+                                                   text-white font-medium rounded-lg transition-all duration-200 
+                                                   focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                                d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                        </svg>
+                                        <span>Schedule Appointment</span>
+                                    </button>
+                                </div>
+                            </form>
                         </div>
                     </div>
                 </div>
-                <?php } ?>
             </div>
 
-            <!-- Right Column - Actions and History -->
-            <div class="lg:col-span-2 space-y-6">
-                <!-- Action Cards -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <!-- Record Vaccine Card -->
-                    <div class="bg-gradient-to-br from-green-600/10 to-green-800/10 border border-green-500/20 rounded-xl p-6">
-                        <h2 class="text-lg font-semibold text-white flex items-center mb-4">
-                            <svg class="w-5 h-5 mr-2 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                            Record Vaccine
-                        </h2>
-                        <form method="POST" class="space-y-4">
-                            <div class="relative">
-                                <select name="vaccine_name" required
-                                        class="w-full px-4 py-3 bg-gray-800 border border-green-500/20 text-white rounded-lg 
-                                               focus:ring-2 focus:ring-green-500 focus:border-transparent transition duration-300">
-                                    <option value="" disabled selected>Select Vaccine</option>
-                                    <?php foreach ($vaccineOptions as $vaccine): ?>
-                                        <option value="<?php echo htmlspecialchars($vaccine); ?>">
-                                            <?php echo htmlspecialchars($vaccine); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <button type="submit" name="record_vaccine"
-                                    class="w-full bg-green-500 hover:bg-green-600 text-white py-3 rounded-lg 
-                                           transition duration-300 flex items-center justify-center">
-                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                        d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                                </svg>
-                                Record Vaccine
-                            </button>
-                        </form>
-                    </div>
-
-                    <!-- Schedule Vaccine Card -->
-                    <div class="bg-gradient-to-br from-blue-600/10 to-blue-800/10 border border-blue-500/20 rounded-xl p-6">
-                        <h2 class="text-lg font-semibold text-white flex items-center mb-4">
-                            <svg class="w-5 h-5 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                            </svg>
-                            Schedule Vaccine
-                        </h2>
-                        <form method="POST" class="space-y-4">
-                            <div class="relative">
-                                <select name="vaccine_name" required
-                                        class="w-full px-4 py-3 bg-gray-800 border border-blue-500/20 text-white rounded-lg 
-                                               focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-300">
-                                    <option value="" disabled selected>Select Vaccine</option>
-                                    <?php foreach ($vaccineOptions as $vaccine): ?>
-                                        <option value="<?php echo htmlspecialchars($vaccine); ?>">
-                                            <?php echo htmlspecialchars($vaccine); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <div class="grid grid-cols-2 gap-4">
-                                <input type="date" name="scheduled_date" required min="<?php echo date('Y-m-d'); ?>"
-                                       class="w-full px-4 py-3 bg-gray-800 border border-blue-500/20 text-white rounded-lg 
-                                              focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-300">
-                                <input type="time" name="scheduled_time" required
-                                       class="w-full px-4 py-3 bg-gray-800 border border-blue-500/20 text-white rounded-lg 
-                                              focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-300">
-                            </div>
-                            <button type="submit" name="schedule_vaccine"
-                                    class="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg 
-                                           transition duration-300 flex items-center justify-center">
-                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                </svg>
-                                Schedule Vaccine
-                            </button>
-                        </form>
-                    </div>
-                </div>
-
-                <!-- Vaccination History -->
-                <div class="bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 rounded-xl p-6">
-                    <h2 class="text-xl font-bold text-white flex items-center mb-6">
-                        <svg class="w-5 h-5 mr-2 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
-                        </svg>
-                        Vaccination History
-                    </h2>
-                    <div class="overflow-x-auto max-h-[500px] scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
-                        <table class="w-full">
-                            <thead class="sticky top-0 bg-gray-900 z-10">
-                                <tr class="text-left border-b border-gray-700">
-                                    <th class="pb-3 pr-6 text-gray-400 font-medium">Vaccine</th>
-                                    <th class="pb-3 px-6 text-gray-400 font-medium">Status</th>
-                                    <th class="pb-3 px-6 text-gray-400 font-medium">Date</th>
-                                    <th class="pb-3 pl-6 text-gray-400 font-medium">Time</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-700/50">
-                                <?php foreach ($vaccinations as $vaccination): ?>
-                                <tr class="hover:bg-gray-800/50 transition duration-300">
-                                    <td class="py-4 pr-6">
-                                        <div class="flex items-center">
-                                            <div class="w-8 h-8 rounded-full <?php echo $vaccination['status'] === 'Taken' 
-                                                ? 'bg-green-500/10 text-green-400' 
-                                                : 'bg-yellow-500/10 text-yellow-400'; ?> 
-                                                flex items-center justify-center mr-3">
-                                                <?php if ($vaccination['status'] === 'Taken'): ?>
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                                        d="M5 13l4 4L19 7"/>
-                                                </svg>
-                                                <?php else: ?>
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                                </svg>
-                                                <?php endif; ?>
-                                            </div>
-                                            <span class="text-white font-medium">
-                                                <?php echo htmlspecialchars($vaccination['vaccine_name']); ?>
-                                            </span>
-                                        </div>
+            <!-- Vaccination History -->
+            <div class="bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 rounded-xl p-6 transform transition-all duration-300 hover:shadow-xl hover:shadow-gray-700/5">
+                <h2 class="text-xl font-bold text-white flex items-center mb-6">
+                    <svg class="w-5 h-5 mr-2 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                    </svg>
+                    Vaccination History
+                </h2>
+                
+                <div class="overflow-x-auto max-h-[500px] scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+                    <table class="w-full">
+                        <thead class="bg-gray-700/50 sticky top-0">
+                            <tr>
+                                <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">
+                                    Vaccine Name
+                                </th>
+                                <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">
+                                    Status
+                                </th>
+                                <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">
+                                    Date
+                                </th>
+                                <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">
+                                    Time
+                                </th>
+                                <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">
+                                    Notes
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-700/30">
+                            <?php if (count($vaccinations) === 0): ?>
+                                <tr>
+                                    <td colspan="5" class="py-4 px-6 text-center text-gray-400">
+                                        No vaccination records found.
                                     </td>
-                                    <td class="py-4 px-6">
-                                        <span class="px-3 py-1 rounded-full text-sm font-medium
-                                            <?php echo $vaccination['status'] === 'Taken' 
-                                                ? 'bg-green-500/10 text-green-400' 
-                                                : 'bg-yellow-500/10 text-yellow-400'; ?>">
-                                            <?php echo htmlspecialchars($vaccination['status']); ?>
+                                </tr>
+                            <?php endif; ?>
+                            
+                            <?php foreach ($vaccinations as $vaccination): ?>
+                            <tr class="hover:bg-gray-700/20 transition-colors duration-150">
+                                <td class="py-4 px-6 text-white font-medium">
+                                    <?php echo htmlspecialchars($vaccination['vaccine_name']); ?>
+                                </td>
+                                <td class="py-4 px-6">
+                                    <?php if ($vaccination['status'] === 'Taken'): ?>
+                                        <span class="px-3 py-1 rounded-full text-xs font-medium bg-green-500/10 text-green-400 border border-green-500/20">
+                                            Completed
                                         </span>
-                                    </td>
-                                    <td class="py-4 px-6 text-gray-300">
-                                        <?php echo $vaccination['status'] === 'Taken' 
-                                            ? date('M d, Y', strtotime($vaccination['date_taken']))
-                                            : date('M d, Y', strtotime($vaccination['scheduled_date'])); ?>
-                                    </td>
-                                    <td class="py-4 pl-6 text-gray-300">
-                                        <?php echo $vaccination['formatted_time'] ?? '-'; ?>
-                                    </td>
-                                </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
+                                    <?php else: ?>
+                                        <span class="px-3 py-1 rounded-full text-xs font-medium bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+                                            Scheduled
+                                        </span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="py-4 px-6 text-gray-300">
+                                    <?php 
+                                        $date = $vaccination['status'] === 'Taken' 
+                                              ? $vaccination['date_taken'] 
+                                              : $vaccination['scheduled_date'];
+                                    echo date('M d, Y', strtotime($date));
+                                ?>
+                                </td>
+                                <td class="py-4 px-6 text-gray-300">
+                                    <?php echo $vaccination['formatted_time'] ?? '-'; ?>
+                                </td>
+                                <td class="py-4 px-6 text-gray-300">
+                                    <?php echo !empty($vaccination['notes']) ? htmlspecialchars($vaccination['notes']) : '-'; ?>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
