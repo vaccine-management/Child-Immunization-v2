@@ -20,7 +20,7 @@ $userDetails = $stmt->fetch(PDO::FETCH_ASSOC);
 // Determine the username to display, fallback to email if username is not available
 $userName = !empty($userDetails['username']) ? $userDetails['username'] : $userDetails['email'];
 
-// Fetch dashboard statistics from the database
+// Fetch dashboard statistics
 $stmt = $conn->query("
     SELECT 
         (SELECT COUNT(*) FROM children) as total_children,
@@ -29,18 +29,18 @@ $stmt = $conn->query("
 ");
 $stats = $stmt->fetch(PDO::FETCH_ASSOC);
 
-// Fetch upcoming vaccinations with additional details from the database
+// Fetch upcoming vaccinations with child details
 $stmt = $conn->query("
     SELECT 
         c.full_name,
         c.gender,
-        c.age,
+        c.date_of_birth,
         v.vaccine_name,
         v.scheduled_date,
-        COALESCE(v.scheduled_time, '00:00:00') as scheduled_time,
+        TIME_FORMAT(v.scheduled_time, '%h:%i %p') as formatted_time,
         COALESCE(v.notes, '') as notes
     FROM vaccinations v
-    JOIN children c ON v.child_id = c.id
+    JOIN children c ON v.child_id = c.child_id
     WHERE v.status = 'Scheduled' 
         AND v.scheduled_date >= CURDATE()
     ORDER BY v.scheduled_date ASC, v.scheduled_time ASC
@@ -58,8 +58,7 @@ foreach ($upcomingVaccinations as $vaccination) {
     $groupedVaccinations[$date][] = $vaccination;
 }
 
-
-// Fetch vaccine distribution data for the chart
+// Fetch vaccine distribution data
 $stmt = $conn->query("
     SELECT vaccine_name, COUNT(*) as count 
     FROM vaccinations 
@@ -68,23 +67,28 @@ $stmt = $conn->query("
 ");
 $vaccineDistribution = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch list of registered children with vaccination status
+// Fetch registered children with vaccination status
 $stmt = $conn->query("
     SELECT DISTINCT 
-        c.id, 
+        c.child_id, 
         c.full_name, 
-        c.age, 
-        c.weight, 
+        c.date_of_birth,
+        c.birth_weight as weight,
         c.gender, 
-        c.parent_name, 
-        c.parent_phone,
-        (SELECT COUNT(*) FROM vaccinations v WHERE v.child_id = c.id AND v.status = 'Taken') as taken_vaccines
+        c.guardian_name as parent_name,
+        c.phone as parent_phone,
+        (
+            SELECT COUNT(*) 
+            FROM vaccinations v 
+            WHERE v.child_id = c.child_id AND v.status = 'Taken'
+        ) as taken_vaccines,
+        TIMESTAMPDIFF(MONTH, c.date_of_birth, CURDATE()) as age_months
     FROM children c
-    ORDER BY c.id DESC
+    ORDER BY c.child_id DESC
 ");
 $registeredChildren = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Get total required vaccines from the database
+// Get total required vaccines
 $stmt = $conn->query("SELECT COUNT(*) as total FROM vaccines");
 $totalRequiredVaccines = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
 
@@ -98,15 +102,24 @@ foreach ($registeredChildren as &$child) {
     } else {
         $child['vaccination_status'] = 'Not Vaccinated';
     }
+    
+    // Calculate age in months and format it
+    $ageMonths = $child['age_months'];
+    if ($ageMonths >= 12) {
+        $years = floor($ageMonths / 12);
+        $child['age'] = $years . " year" . ($years > 1 ? "s" : "");
+    } else {
+        $child['age'] = $ageMonths . " month" . ($ageMonths > 1 ? "s" : "");
+    }
 }
 unset($child); // Break the reference with the last element
 
-// Function to format age in months or years
-function formatAge($age) {
-    if ($age < 12) {
-        return $age . " month" . ($age > 1 ? "s" : "");
+// Update the formatAge function to work with months
+function formatAge($ageMonths) {
+    if ($ageMonths < 12) {
+        return $ageMonths . " month" . ($ageMonths > 1 ? "s" : "");
     }
-    $years = floor($age / 12);
+    $years = floor($ageMonths / 12);
     return $years . " year" . ($years > 1 ? "s" : "");
 }
 
@@ -510,7 +523,7 @@ function formatAge($age) {
                     <tbody class="divide-y divide-gray-700">
                         <?php foreach ($registeredChildren as $child): ?>
                             <tr class="hover:bg-gray-700/50 transition duration-300 cursor-pointer"
-                                onclick="window.location.href='child_profile.php?id=<?php echo $child['id']; ?>'">
+                                onclick="window.location.href='child_profile.php?id=<?php echo $child['child_id']; ?>'">
                                 <!-- Child Info -->
                                 <td class="px-4 py-4">
                                     <div class="flex items-center space-x-3">
@@ -535,7 +548,7 @@ function formatAge($age) {
                                                 <?php echo htmlspecialchars($child['full_name']); ?>
                                             </div>
                                             <div class="text-xs text-gray-400">
-                                                ID: #<?php echo $child['id']; ?>
+                                                ID: #<?php echo $child['child_id']; ?>
                                             </div>
                                         </div>
                                     </div>
@@ -554,7 +567,7 @@ function formatAge($age) {
                                 <!-- Age & Weight -->
                                 <td class="px-4 py-4">
                                     <div class="text-sm text-white">
-                                        <?php echo formatAge($child['age']); ?>
+                                        <?php echo formatAge($child['age_months']); ?>
                                     </div>
                                     <div class="text-sm text-gray-400">
                                         <?php echo htmlspecialchars($child['weight']); ?> kg
@@ -607,7 +620,7 @@ document.addEventListener('DOMContentLoaded', function() {
             'details' => array_map(function($vaccination) {
                 return [
                     'vaccine' => $vaccination['vaccine_name'],
-                    'time' => $vaccination['scheduled_time']
+                    'time' => $vaccination['formatted_time']
                 ];
             }, $vaccinations)
         ];

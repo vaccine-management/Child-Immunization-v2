@@ -10,35 +10,90 @@ if (!isset($_SESSION['user'])) {
 // Include database connection
 include 'backend/db.php';
 
+//function  to generate the unique ID
+function generateChildID($fullName, $guardianName, $dateOfBirth) {
+    // Get first letters of each word in child's name
+    $nameInitials = array_map(function($word) {
+        return strtoupper(substr($word, 0, 1));
+    }, explode(' ', $fullName));
+    
+    // Get first letters of guardian's name
+    $guardianInitials = array_map(function($word) {
+        return strtoupper(substr($word, 0, 1));
+    }, explode(' ', $guardianName));
+    
+    // Format date as YYMMDD
+    $dateFormat = date('ymd', strtotime($dateOfBirth));
+    
+    // Combine parts
+    $nameStr = implode('', $nameInitials);
+    $guardianStr = implode('', $guardianInitials);
+    
+    // Create the ID
+    // where C = Child initials, G = Guardian initials
+    $childID = sprintf("%s-%s-%s", 
+        str_pad($nameStr, 4, '0'), 
+        str_pad($guardianStr, 4, '0'), 
+        $dateFormat
+    );
+    
+    return $childID;
+}
+
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Collect and sanitize input
     $fullName = trim($_POST['full_name']);
-    $age = trim($_POST['age']);
-    $weight = floatval($_POST['weight']);
+    $dateOfBirth = trim($_POST['date_of_birth']);
     $gender = trim($_POST['gender']);
-    $parentName = trim($_POST['parent_name']);
-    $parentPhone = trim($_POST['parent_phone']);
+    $birthWeight = floatval($_POST['birth_weight']);
+    $placeOfBirth = trim($_POST['place_of_birth']);
+    
+    $guardianName = trim($_POST['guardian_name']);
+    $phone = trim($_POST['phone']);
+    $email = trim($_POST['email']);
+    $address = trim($_POST['address']);
+    
+    $birthComplications = trim($_POST['birth_complications']);
+    $allergies = trim($_POST['allergies']);
+    $previousVaccinations = trim($_POST['previous_vaccinations']);
 
-    // Validate inputs
-    if (empty($fullName) || empty($parentName) || empty($parentPhone) || empty($gender)) {
-        $error = "All fields are required.";
-    } elseif ($weight <= 0) {
-        $error = "Weight must be a positive number.";
+    // Validate required inputs
+    if (empty($fullName) || empty($dateOfBirth) || empty($gender) || empty($guardianName) || empty($phone)) {
+        $error = "Required fields must be filled out.";
+    } elseif ($birthWeight <= 0) {
+        $error = "Birth weight must be a positive number.";
     } else {
+        // Generate child_id
+        $childID = generateChildID($fullName, $guardianName, $dateOfBirth);
+
         // Insert into database
-        $stmt = $conn->prepare("INSERT INTO children (full_name, age, weight, gender, parent_name, parent_phone) 
-                               VALUES (:full_name, :age, :weight, :gender, :parent_name, :parent_phone)");
+        $stmt = $conn->prepare("INSERT INTO children (
+            child_id, full_name, date_of_birth, gender, birth_weight, place_of_birth,
+            guardian_name, phone, email, address,
+            birth_complications, allergies, previous_vaccinations
+        ) VALUES (
+            :child_id, :full_name, :date_of_birth, :gender, :birth_weight, :place_of_birth,
+            :guardian_name, :phone, :email, :address,
+            :birth_complications, :allergies, :previous_vaccinations
+        )");
         
         try {
             $stmt->execute([
+                ':child_id' => $childID,
                 ':full_name' => $fullName,
-                ':age' => $age,
-                ':weight' => $weight,
+                ':date_of_birth' => $dateOfBirth,
                 ':gender' => $gender,
-                ':parent_name' => $parentName,
-                ':parent_phone' => $parentPhone
+                ':birth_weight' => $birthWeight,
+                ':place_of_birth' => $placeOfBirth,
+                ':guardian_name' => $guardianName,
+                ':phone' => $phone,
+                ':email' => $email,
+                ':address' => $address,
+                ':birth_complications' => $birthComplications,
+                ':allergies' => $allergies,
+                ':previous_vaccinations' => $previousVaccinations
             ]);
-            // Redirect to prevent form resubmission
             header("Location: children.php?success=1");
             exit();
         } catch (PDOException $e) {
@@ -48,7 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Fetch all children from the database
-$stmt = $conn->query("SELECT * FROM children ORDER BY id DESC");
+$stmt = $conn->query("SELECT child_id, full_name, gender, date_of_birth, birth_weight, guardian_name, phone FROM children ORDER BY child_id DESC");
 $children = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Define success message
@@ -63,6 +118,7 @@ if (isset($_GET['success'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Children Management - Immunization System</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
 </head>
@@ -109,8 +165,8 @@ if (isset($_GET['success'])) {
                             </div>
                             <div class="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label for="age" class="block text-gray-300 text-sm font-medium mb-2">Age</label>
-                                    <input type="text" id="age" name="age" placeholder="e.g., 7months" required
+                                    <label for="date_of_birth" class="block text-gray-300 text-sm font-medium mb-2">Date of Birth</label>
+                                    <input type="date" id="date_of_birth" name="date_of_birth" required
                                            class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
                                                   focus:ring-2 focus:ring-blue-500 transition duration-300">
                                 </div>
@@ -139,14 +195,14 @@ if (isset($_GET['success'])) {
                         <h3 class="text-sm font-semibold text-green-400 uppercase tracking-wider">Parent Information</h3>
                         <div class="grid grid-cols-1 gap-4">
                             <div>
-                                <label for="parent_name" class="block text-gray-300 text-sm font-medium mb-2">Parent's Name</label>
-                                <input type="text" id="parent_name" name="parent_name" required
+                                <label for="guardian_name" class="block text-gray-300 text-sm font-medium mb-2">Guardian's Name</label>
+                                <input type="text" id="guardian_name" name="guardian_name" required
                                        class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
                                               focus:ring-2 focus:ring-blue-500 transition duration-300">
                             </div>
                             <div>
-                                <label for="parent_phone" class="block text-gray-300 text-sm font-medium mb-2">Parent's Phone</label>
-                                <input type="tel" id="parent_phone" name="parent_phone" required
+                                <label for="phone" class="block text-gray-300 text-sm font-medium mb-2">Phone</label>
+                                <input type="tel" id="phone" name="phone" required
                                        class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
                                               focus:ring-2 focus:ring-blue-500 transition duration-300">
                             </div>
@@ -227,6 +283,144 @@ if (isset($_GET['success'])) {
             </div>
         </div>
 
+        <!-- Registration Form (Hidden by default) -->
+        <div id="registrationForm" class="hidden mb-6">
+            <div class="bg-gray-800 rounded-lg shadow-lg p-6 animate__animated animate__fadeIn">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-semibold text-white flex items-center">
+                        <svg class="w-6 h-6 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                  d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z">
+                            </path>
+                        </svg>
+                        Register New Child
+                    </h2>
+                    <button type="button" id="closeForm" class="text-gray-400 hover:text-white">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <form method="POST" class="space-y-8">
+                    <!-- Child's Personal Information -->
+                    <div class="space-y-4">
+                        <h3 class="text-sm font-semibold text-blue-400 uppercase tracking-wider">Child's Personal Information</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="col-span-2">
+                                <label for="full_name" class="block text-gray-300 text-sm font-medium mb-2">Full Name</label>
+                                <input type="text" id="full_name" name="full_name" required
+                                       class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                              focus:ring-2 focus:ring-blue-500 transition duration-300">
+                            </div>
+                            <div>
+                                <label for="date_of_birth" class="block text-gray-300 text-sm font-medium mb-2">Date of Birth</label>
+                                <input type="date" id="date_of_birth" name="date_of_birth" required
+                                       class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                              focus:ring-2 focus:ring-blue-500 transition duration-300">
+                            </div>
+                            <div>
+                                <label for="gender" class="block text-gray-300 text-sm font-medium mb-2">Gender</label>
+                                <select id="gender" name="gender" required
+                                        class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                               focus:ring-2 focus:ring-blue-500 transition duration-300">
+                                    <option value="">Select Gender</option>
+                                    <option value="Male">Male</option>
+                                    <option value="Female">Female</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="birth_weight" class="block text-gray-300 text-sm font-medium mb-2">Weight at Birth (kg)</label>
+                                <input type="number" step="0.01" id="birth_weight" name="birth_weight" required
+                                       class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                              focus:ring-2 focus:ring-blue-500 transition duration-300">
+                            </div>
+                            <div>
+                                <label for="place_of_birth" class="block text-gray-300 text-sm font-medium mb-2">Place of Birth</label>
+                                <select id="place_of_birth" name="place_of_birth" required
+                                        class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                               focus:ring-2 focus:ring-blue-500 transition duration-300">
+                                    <option value="">Select Place of Birth</option>
+                                    <option value="Hospital">Hospital</option>
+                                    <option value="Home">Home</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Parent/Guardian Information -->
+                    <div class="space-y-4">
+                        <h3 class="text-sm font-semibold text-green-400 uppercase tracking-wider">Parent/Guardian Information</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="col-span-2">
+                                <label for="guardian_name" class="block text-gray-300 text-sm font-medium mb-2">Guardian's Full Name</label>
+                                <input type="text" id="guardian_name" name="guardian_name" required
+                                       class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                              focus:ring-2 focus:ring-blue-500 transition duration-300">
+                            </div>
+                            <div>
+                                <label for="phone" class="block text-gray-300 text-sm font-medium mb-2">Phone Number</label>
+                                <input type="tel" id="phone" name="phone" required
+                                       class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                              focus:ring-2 focus:ring-blue-500 transition duration-300">
+                            </div>
+                            <div>
+                                <label for="email" class="block text-gray-300 text-sm font-medium mb-2">Email Address</label>
+                                <input type="email" id="email" name="email"
+                                       class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                              focus:ring-2 focus:ring-blue-500 transition duration-300">
+                            </div>
+                            <div class="col-span-2">
+                                <label for="address" class="block text-gray-300 text-sm font-medium mb-2">Residential Address</label>
+                                <textarea id="address" name="address" rows="2" required
+                                          class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                                 focus:ring-2 focus:ring-blue-500 transition duration-300"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Medical History -->
+                    <div class="space-y-4">
+                        <h3 class="text-sm font-semibold text-green-400 uppercase tracking-wider">Medical History</h3>
+                        <div class="grid grid-cols-1 gap-4">
+                            <div>
+                                <label for="birth_complications" class="block text-gray-300 text-sm font-medium mb-2">Birth Complications</label>
+                                <textarea id="birth_complications" name="birth_complications" rows="2"
+                                          class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                                 focus:ring-2 focus:ring-blue-500 transition duration-300"
+                                          placeholder="Describe any complications during birth (if any)"></textarea>
+                            </div>
+                            <div>
+                                <label for="allergies" class="block text-gray-300 text-sm font-medium mb-2">Known Allergies</label>
+                                <textarea id="allergies" name="allergies" rows="2"
+                                          class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                                 focus:ring-2 focus:ring-blue-500 transition duration-300"
+                                          placeholder="List any known allergies"></textarea>
+                            </div>
+                            <div>
+                                <label for="previous_vaccinations" class="block text-gray-300 text-sm font-medium mb-2">Previous Vaccinations</label>
+                                <textarea id="previous_vaccinations" name="previous_vaccinations" rows="2"
+                                          class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                                 focus:ring-2 focus:ring-blue-500 transition duration-300"
+                                          placeholder="List any previous vaccinations"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" 
+                            class="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 
+                                   text-white py-3 rounded-lg transition duration-300 flex items-center justify-center">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        Register Child
+                    </button>
+                </form>
+            </div>
+        </div>
+
         <!-- Children List -->
         <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
             <div class="max-h-[calc(100vh-12rem)] overflow-y-auto">
@@ -240,9 +434,23 @@ if (isset($_GET['success'])) {
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-700" id="childrenTable">
-                        <?php foreach ($children as $child): ?>
+                        <?php foreach ($children as $child): 
+                            // Calculate age from date_of_birth
+                            $birthDate = new DateTime($child['date_of_birth']);
+                            $today = new DateTime();
+                            $age = $birthDate->diff($today);
+                            
+                            // Format age string
+                            if ($age->y > 0) {
+                                $ageString = $age->y . " year" . ($age->y > 1 ? "s" : "");
+                            } elseif ($age->m > 0) {
+                                $ageString = $age->m . " month" . ($age->m > 1 ? "s" : "");
+                            } else {
+                                $ageString = $age->d . " day" . ($age->d > 1 ? "s" : "");
+                            }
+                        ?>
                             <tr class="hover:bg-gray-700/50 transition duration-300 cursor-pointer" 
-                                onclick="window.location.href='child_profile.php?id=<?php echo $child['id']; ?>'">
+                                onclick="window.location.href='child_profile.php?id=<?php echo htmlspecialchars($child['child_id']); ?>'">
                                 <td class="px-6 py-4">
                                     <div class="flex items-center space-x-3">
                                         <div class="flex-shrink-0">
@@ -264,23 +472,27 @@ if (isset($_GET['success'])) {
                                             <div class="text-sm font-medium text-white">
                                                 <?php echo htmlspecialchars($child['full_name']); ?>
                                             </div>
-                                            <div class="text-xs text-gray-400">ID: #<?php echo $child['id']; ?></div>
+                                            <div class="text-xs text-gray-400">
+                                                ID: <?php echo htmlspecialchars($child['child_id']); ?>
+                                            </div>
                                         </div>
                                     </div>
                                 </td>
                                 <td class="px-6 py-4">
                                     <span class="px-2 py-1 text-xs rounded-full
                                         <?php echo $child['gender'] === 'Male' ? 'bg-blue-500/10 text-blue-400' : 'bg-pink-500/10 text-pink-400'; ?>">
-                                        <?php echo $child['gender']; ?>
+                                        <?php echo htmlspecialchars($child['gender']); ?>
                                     </span>
                                 </td>
                                 <td class="px-6 py-4">
-                                    <div class="text-sm text-white"><?php echo htmlspecialchars($child['age']); ?></div>
-                                    <div class="text-sm text-gray-400"><?php echo htmlspecialchars($child['weight']); ?> kg</div>
+                                    <div class="text-sm text-white"><?php echo htmlspecialchars($ageString); ?></div>
+                                    <div class="text-sm text-gray-400">
+                                        <?php echo htmlspecialchars($child['birth_weight']); ?> kg
+                                    </div>
                                 </td>
                                 <td class="px-6 py-4">
-                                    <div class="text-sm text-white"><?php echo htmlspecialchars($child['parent_name']); ?></div>
-                                    <div class="text-sm text-gray-400"><?php echo htmlspecialchars($child['parent_phone']); ?></div>
+                                    <div class="text-sm text-white"><?php echo htmlspecialchars($child['guardian_name']); ?></div>
+                                    <div class="text-sm text-gray-400"><?php echo htmlspecialchars($child['phone']); ?></div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -291,39 +503,24 @@ if (isset($_GET['success'])) {
     </div>
 
     <script>
-        // Modal functionality
-        const modalBackdrop = document.getElementById('modalBackdrop');
-        const registrationModal = document.getElementById('registrationModal');
+        // Update the form toggle functionality
         const showFormButton = document.getElementById('showFormButton');
-        const closeModal = document.getElementById('closeModal');
+        const closeFormButton = document.getElementById('closeForm');
+        const registrationForm = document.getElementById('registrationForm');
 
-        function openModal() {
-            modalBackdrop.classList.remove('hidden');
-            registrationModal.classList.remove('hidden');
-            registrationModal.classList.add('animate__fadeInDown');
-        }
-
-        function closeModalFunc() {
-            registrationModal.classList.remove('animate__fadeInDown');
-            registrationModal.classList.add('animate__fadeOutUp');
-            setTimeout(() => {
-                modalBackdrop.classList.add('hidden');
-                registrationModal.classList.add('hidden');
-                registrationModal.classList.remove('animate__fadeOutUp');
-            }, 300);
-        }
-
-        showFormButton.addEventListener('click', openModal);
-        closeModal.addEventListener('click', closeModalFunc);
-        modalBackdrop.addEventListener('click', closeModalFunc);
-
-        // Close modal on escape key
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') closeModalFunc();
+        showFormButton.addEventListener('click', () => {
+            registrationForm.classList.remove('hidden');
+            registrationForm.scrollIntoView({ behavior: 'smooth' });
         });
 
-        // Prevent modal close when clicking inside
-        registrationModal.addEventListener('click', (e) => e.stopPropagation());
+        closeFormButton.addEventListener('click', () => {
+            registrationForm.classList.add('hidden');
+        });
+
+        // Hide form after successful registration
+        <?php if (isset($success)): ?>
+        registrationForm.classList.add('hidden');
+        <?php endif; ?>
 
         // Search functionality
         const searchInput = document.getElementById('searchInput');
@@ -337,7 +534,7 @@ if (isset($_GET['success'])) {
             });
         });
 
-        // Auto-hide notifications and clear URL
+        // Auto-hide notifications
         const notifications = document.querySelectorAll('.notification');
         notifications.forEach(notification => {
             setTimeout(() => {
