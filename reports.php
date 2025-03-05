@@ -322,5 +322,3 @@ $pageTitle = "Reports & Analytics";
         });
     });
 </script>
-
-<?php include 'includes/footer.php'; ?> 
