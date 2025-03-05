@@ -7,6 +7,10 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'Nurse') {
     exit();
 }
 
+// Add this at the top of your file after session_start() to enable better error reporting
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
 
 // Include database connection
 include 'backend/db.php';
@@ -70,120 +74,477 @@ $stmt->bindParam(':child_id', $childId);
 $stmt->execute();
 $vaccinations = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Calculate vaccination progress without using the vaccines table
-$takenVaccines = count(array_filter($vaccinations, function($v) {
-    return $v['status'] === 'Taken';
-}));
+// Get vaccine options from the vaccines table
+$stmt = $conn->query("SELECT vaccine_name, max_doses, description, target_disease FROM vaccines ORDER BY vaccine_name");
+$availableVaccines = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Get distinct vaccine names from vaccinations table for progress calculation
-$stmt = $conn->query("SELECT COUNT(DISTINCT vaccine_name) FROM vaccinations");
-$totalVaccineTypes = $stmt->fetchColumn();
-
-// Set a default value if no vaccines found to avoid division by zero
-if ($totalVaccineTypes == 0) {
-    $totalVaccineTypes = 1;
-    $progress = 0;
-} else {
-    // Calculate progress based on how many unique vaccines have been taken
-    $stmt = $conn->query("SELECT COUNT(DISTINCT vaccine_name) FROM vaccinations WHERE status = 'Taken' AND child_id = '$childId'");
-    $uniqueTakenVaccines = $stmt->fetchColumn();
-    $progress = ($uniqueTakenVaccines / $totalVaccineTypes) * 100;
+// Get taken vaccines for this child
+$stmt = $conn->prepare("
+    SELECT vaccine_name, dose_number 
+    FROM vaccinations 
+    WHERE child_id = ? AND status = 'Administered'
+    ORDER BY vaccine_name, dose_number
+");
+$stmt->execute([$childId]);
+$takenVaccines = [];
+while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+    if (!isset($takenVaccines[$row['vaccine_name']])) {
+        $takenVaccines[$row['vaccine_name']] = [];
+    }
+    $takenVaccines[$row['vaccine_name']][] = $row['dose_number'];
 }
 
-// Get vaccine options from existing vaccinations instead of vaccines table
-$stmt = $conn->query("SELECT DISTINCT vaccine_name FROM vaccinations ORDER BY vaccine_name");
-$vaccineOptions = $stmt->fetchAll(PDO::FETCH_COLUMN);
+// Calculate total vaccines and progress
+$totalVaccineTypes = count($availableVaccines);
+$uniqueTakenVaccineNames = count(array_keys($takenVaccines));
+$progress = ($totalVaccineTypes > 0) ? ($uniqueTakenVaccineNames / $totalVaccineTypes) * 100 : 0;
 
-// Add default vaccines if none found in the system
-if (empty($vaccineOptions)) {
-    $vaccineOptions = [
-        'BCG',
-        'OPV 0',
-        'OPV 1',
-        'OPV 2',
-        'OPV 3',
-        'Pentavalent 1',
-        'Pentavalent 2',
-        'Pentavalent 3',
-        'Rotavirus 1',
-        'Rotavirus 2',
-        'PCV 1',
-        'PCV 2',
-        'PCV 3',
-        'IPV',
-        'Measles',
-        'Yellow Fever',
-        'Vitamin A'
-    ];
+// Add this at the top of your file for a one-time check of the appointments table structure
+try {
+    $tableInfo = $conn->query("DESCRIBE appointments")->fetchAll(PDO::FETCH_ASSOC);
+    file_put_contents('appointment_table.log', print_r($tableInfo, true), FILE_APPEND);
+} catch (Exception $e) {
+    file_put_contents('appointment_table.log', "Error getting table info: " . $e->getMessage(), FILE_APPEND);
+}
+
+// First, let's add a function to check if a vaccine is fully administered
+function isVaccineFullyAdministered($conn, $childId, $vaccineName) {
+    // Get the maximum doses for this vaccine from the vaccines table
+    $stmt = $conn->prepare("
+        SELECT max_doses 
+        FROM vaccines 
+        WHERE vaccine_name = :vaccine_name
+    ");
+    $stmt->execute([':vaccine_name' => $vaccineName]);
+    $maxDoses = $stmt->fetchColumn();
+    
+    if (!$maxDoses) {
+        // If vaccine not found in vaccines table, try vaccine_schedule
+        $stmt = $conn->prepare("
+            SELECT MAX(dose_number) as max_doses 
+            FROM vaccine_schedule 
+            WHERE vaccine_name = :vaccine_name
+        ");
+        $stmt->execute([':vaccine_name' => $vaccineName]);
+        $maxDoses = $stmt->fetchColumn();
+    }
+    
+    // Get the number of administered doses
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) 
+        FROM vaccinations 
+        WHERE child_id = :child_id 
+        AND vaccine_name = :vaccine_name 
+        AND status = 'Administered'
+    ");
+    $stmt->execute([
+        ':child_id' => $childId,
+        ':vaccine_name' => $vaccineName
+    ]);
+    $administeredDoses = $stmt->fetchColumn();
+    
+    return $administeredDoses >= $maxDoses;
 }
 
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['record_vaccine'])) {
         $vaccineName = trim($_POST['vaccine_name']);
+        $doseNumber = isset($_POST['dose_number']) ? (int)trim($_POST['dose_number']) : 1;
         $dateTaken = date('Y-m-d');
+        $notes = trim($_POST['notes'] ?? 'Recorded manually');
+        $error = null;
+        $debug_log = [];  // For storing debugging info
 
-        if (empty($vaccineName)) {
-            $error = "Vaccine name is required.";
-        } else {
-            // Check if the vaccine is already scheduled
-            $stmt = $conn->prepare("SELECT id FROM vaccinations WHERE child_id = :child_id AND vaccine_name = :vaccine_name AND status = 'Scheduled'");
+        try {
+            if (empty($vaccineName)) {
+                throw new Exception("Vaccine name is required.");
+            }
+            
+            // Check if the vaccine is already fully administered
+            if (isVaccineFullyAdministered($conn, $childId, $vaccineName)) {
+                throw new Exception("This vaccine has already been fully administered and cannot be recorded again.");
+            }
+
+            // Check if this vaccine dose is scheduled and validate the date
+            $stmt = $conn->prepare("
+                SELECT scheduled_date 
+                FROM vaccinations 
+                WHERE child_id = :child_id 
+                AND vaccine_name = :vaccine_name 
+                AND dose_number = :dose_number 
+                AND status = 'Scheduled'
+            ");
             $stmt->execute([
                 ':child_id' => $childId,
-                ':vaccine_name' => $vaccineName
+                ':vaccine_name' => $vaccineName,
+                ':dose_number' => $doseNumber
             ]);
             $scheduledVaccine = $stmt->fetch(PDO::FETCH_ASSOC);
 
             if ($scheduledVaccine) {
-                // Update the scheduled vaccine to "Taken"
-                $stmt = $conn->prepare("UPDATE vaccinations SET date_taken = :date_taken, status = 'Taken' WHERE id = :id");
-                $stmt->execute([
-                    ':date_taken' => $dateTaken,
-                    ':id' => $scheduledVaccine['id']
+                $scheduledDate = new DateTime($scheduledVaccine['scheduled_date']);
+                $today = new DateTime($dateTaken);
+                
+                // Compare dates without time
+                $scheduledDate->setTime(0, 0);
+                $today->setTime(0, 0);
+                
+                if ($today < $scheduledDate) {
+                    throw new Exception("This vaccine is scheduled for " . $scheduledDate->format('Y-m-d') . ". Cannot record it before the scheduled date.");
+                }
+            }
+            
+            // Look up the max doses for this vaccine
+            $stmt = $conn->prepare("SELECT max_doses FROM vaccines WHERE vaccine_name = :vaccine_name");
+            $stmt->execute([':vaccine_name' => $vaccineName]);
+            $maxDoses = $stmt->fetchColumn();
+            
+            if ($doseNumber < 1 || $doseNumber > $maxDoses) {
+                throw new Exception("Invalid dose number. This vaccine requires doses between 1 and $maxDoses.");
+            }
+            
+            // Check if this specific dose has already been recorded
+            if (isset($takenVaccines[$vaccineName]) && in_array($doseNumber, $takenVaccines[$vaccineName])) {
+                throw new Exception("Dose $doseNumber for $vaccineName has already been recorded.");
+            }
+            
+            // Start a transaction
+            $conn->beginTransaction();
+            $debug_log[] = "Transaction started";
+            
+            // Check if the vaccine is already scheduled
+            $stmt = $conn->prepare("SELECT child_id, vaccine_name, dose_number, scheduled_date, scheduled_time FROM vaccinations 
+                                   WHERE child_id = :child_id 
+                                   AND vaccine_name = :vaccine_name 
+                                   AND dose_number = :dose_number 
+                                   AND status = 'Scheduled'");
+            $stmt->execute([
+                ':child_id' => $childId,
+                ':vaccine_name' => $vaccineName,
+                ':dose_number' => $doseNumber
+            ]);
+            $scheduledVaccine = $stmt->fetch(PDO::FETCH_ASSOC);
+            $debug_log[] = "Checked for scheduled vaccine: " . ($scheduledVaccine ? "Found: {$scheduledVaccine['vaccine_name']} Dose {$scheduledVaccine['dose_number']}" : "Not found");
+
+            if ($scheduledVaccine) {
+                // Update the scheduled vaccine to "Administered" using the composite key
+                $stmt = $conn->prepare("UPDATE vaccinations 
+                                       SET administered_date = :administered_date, 
+                                           status = 'Administered',
+                                           notes = :notes
+                                       WHERE child_id = :child_id
+                                       AND vaccine_name = :vaccine_name
+                                       AND dose_number = :dose_number");
+                $result = $stmt->execute([
+                    ':administered_date' => $dateTaken,
+                    ':notes' => $notes,
+                    ':child_id' => $childId,
+                    ':vaccine_name' => $vaccineName,
+                    ':dose_number' => $doseNumber
                 ]);
-            } else {
-                // Insert a new record for the vaccine as "Taken"
-                $stmt = $conn->prepare("INSERT INTO vaccinations (child_id, vaccine_name, date_taken, status) 
-                                      VALUES (:child_id, :vaccine_name, :date_taken, 'Taken')");
+                $debug_log[] = "Updated vaccination status: " . ($result ? "Success" : "Failed");
+                
+                // Find the appointment associated with this vaccine (date only, no time)
+                $appointmentDate = $scheduledVaccine['scheduled_date'];
+                
+                // Find appointment_id with only the date
+                $stmt = $conn->prepare("
+                    SELECT av.appointment_id 
+                    FROM appointment_vaccines av
+                    JOIN appointments a ON a.id = av.appointment_id
+                    WHERE a.child_id = :child_id 
+                    AND av.vaccine_name = :vaccine_name 
+                    AND av.dose_number = :dose_number
+                    AND a.scheduled_date = :scheduled_date
+                ");
                 $stmt->execute([
                     ':child_id' => $childId,
                     ':vaccine_name' => $vaccineName,
-                    ':date_taken' => $dateTaken
+                    ':dose_number' => $doseNumber,
+                    ':scheduled_date' => $appointmentDate
                 ]);
+                $appointmentData = $stmt->fetch(PDO::FETCH_ASSOC);
+                $debug_log[] = "Checked for appointment with date only: " . ($appointmentData ? "Found ID: {$appointmentData['appointment_id']}" : "Not found");
+                
+                if ($appointmentData) {
+                    $appointmentId = $appointmentData['appointment_id'];
+                    
+                    // Update appointment_vaccines status
+                    $stmt = $conn->prepare("
+                        UPDATE appointment_vaccines 
+                        SET status = 'completed' 
+                        WHERE appointment_id = :appointment_id 
+                        AND vaccine_name = :vaccine_name 
+                        AND dose_number = :dose_number
+                    ");
+                    $result = $stmt->execute([
+                        ':appointment_id' => $appointmentId,
+                        ':vaccine_name' => $vaccineName,
+                        ':dose_number' => $doseNumber
+                    ]);
+                    $debug_log[] = "Updated appointment_vaccines: " . ($result ? "Success" : "Failed");
+                    
+                    // Check all vaccines for this appointment
+                    $stmt = $conn->prepare("
+                        SELECT COUNT(*) as total, 
+                               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed 
+                        FROM appointment_vaccines 
+                        WHERE appointment_id = :appointment_id
+                    ");
+                    $stmt->execute([':appointment_id' => $appointmentId]);
+                    $counts = $stmt->fetch(PDO::FETCH_ASSOC);
+                    $debug_log[] = "Checked appointment completion: Total: {$counts['total']}, Completed: {$counts['completed']}";
+                    
+                    // Update appointment status - note the correct ENUM value 'partially_completed'
+                    $appointmentStatus = 'scheduled';
+                    if ($counts['completed'] > 0) {
+                        if ($counts['completed'] == $counts['total']) {
+                            $appointmentStatus = 'completed';
+                        } else {
+                            $appointmentStatus = 'partially_completed';
+                        }
+                    }
+                    $debug_log[] = "Setting appointment status to: $appointmentStatus";
+                    
+                    // Update the appointment status (removed actual_date)
+                    $stmt = $conn->prepare("
+                        UPDATE appointments 
+                        SET status = :status
+                        WHERE id = :appointment_id
+                    ");
+                    $result = $stmt->execute([
+                        ':status' => $appointmentStatus,
+                        ':appointment_id' => $appointmentId
+                    ]);
+                    $debug_log[] = "Updated appointment: " . ($result ? "Success" : "Failed");
+                }
+            } else {
+                // For unscheduled vaccines, create a new appointment (without scheduled_time and actual_date)
+                $debug_log[] = "Creating new walk-in appointment";
+                $stmt = $conn->prepare("
+                    INSERT INTO appointments (
+                        child_id, scheduled_date, status, notes
+                    ) VALUES (
+                        :child_id, :scheduled_date, 'completed', :notes
+                    )
+                ");
+                
+                $result = $stmt->execute([
+                    ':child_id' => $childId,
+                    ':scheduled_date' => $dateTaken,
+                    ':notes' => "Walk-in vaccination: $vaccineName (Dose $doseNumber)"
+                ]);
+                $debug_log[] = "Created appointment: " . ($result ? "Success" : "Failed");
+                
+                $appointmentId = $conn->lastInsertId();
+                $debug_log[] = "New appointment ID: $appointmentId";
+                
+                // Insert record for the vaccine as "Administered"
+                $stmt = $conn->prepare("
+                    INSERT INTO vaccinations (
+                        child_id, vaccine_name, dose_number, administered_date, status, notes
+                    ) VALUES (
+                        :child_id, :vaccine_name, :dose_number, :administered_date, 'Administered', :notes
+                    )
+                ");
+                $result = $stmt->execute([
+                    ':child_id' => $childId,
+                    ':vaccine_name' => $vaccineName,
+                    ':dose_number' => $doseNumber,
+                    ':administered_date' => $dateTaken,
+                    ':notes' => $notes
+                ]);
+                $debug_log[] = "Created vaccination record: " . ($result ? "Success" : "Failed");
+                
+                // Link to appointment_vaccines
+                $stmt = $conn->prepare("
+                    INSERT INTO appointment_vaccines (
+                        appointment_id, vaccine_name, dose_number, status
+                    ) VALUES (
+                        :appointment_id, :vaccine_name, :dose_number, 'completed'
+                    )
+                ");
+                
+                $result = $stmt->execute([
+                    ':appointment_id' => $appointmentId,
+                    ':vaccine_name' => $vaccineName,
+                    ':dose_number' => $doseNumber
+                ]);
+                $debug_log[] = "Created appointment_vaccines link: " . ($result ? "Success" : "Failed");
             }
-
-            header("Location: child_profile.php?id=$childId&success=1");
+            
+            // Commit the transaction
+            $conn->commit();
+            $debug_log[] = "Transaction committed successfully";
+            
+            // Refresh the page data
+            header("Location: child_profile.php?id=$childId&success=1&vaccine=$vaccineName&dose=$doseNumber");
             exit();
+        } 
+        catch (Exception $e) {
+            // Roll back the transaction on error
+            if ($conn->inTransaction()) {
+                $conn->rollBack();
+                $debug_log[] = "Transaction rolled back";
+            }
+            $error = "Failed to record vaccine: " . $e->getMessage();
+            $debug_log[] = "Error: " . $e->getMessage();
+            
+            // Log debugging info to a file for easier troubleshooting
+            file_put_contents('vaccine_debug.log', date('Y-m-d H:i:s') . " - " . implode("\n", $debug_log) . "\n\n", FILE_APPEND);
         }
     }
 
     if (isset($_POST['schedule_vaccine'])) {
         $vaccineName = trim($_POST['vaccine_name']);
-        $scheduledDate = trim($_POST['scheduled_date']);
-        $scheduledTime = trim($_POST['scheduled_time']);
-
-        if (empty($vaccineName) || empty($scheduledDate) || empty($scheduledTime)) {
-            $error = "All fields are required.";
-        } else {
-            // Insert a new record for the vaccine as "Scheduled"
+        $doseNumber = isset($_POST['dose_number']) ? (int)trim($_POST['dose_number']) : 1;
+        $scheduledDate = $_POST['scheduled_date'];
+        $notes = trim($_POST['notes'] ?? '');
+        
+        try {
+            // Start transaction
+            $conn->beginTransaction();
+            
+            // Check if this vaccine dose has already been administered
             $stmt = $conn->prepare("
-                INSERT INTO vaccinations 
-                    (child_id, vaccine_name, scheduled_date, scheduled_time, status) 
-                VALUES 
-                    (:child_id, :vaccine_name, :scheduled_date, :scheduled_time, 'Scheduled')
+                SELECT status 
+                FROM vaccinations 
+                WHERE child_id = :child_id 
+                AND vaccine_name = :vaccine_name 
+                AND dose_number = :dose_number
             ");
-            try {
-                $stmt->execute([
-                    ':child_id' => $childId,
-                    ':vaccine_name' => $vaccineName,
-                    ':scheduled_date' => $scheduledDate,
-                    ':scheduled_time' => $scheduledTime
-                ]);
-                header("Location: child_profile.php?id=$childId&success=2");
-                exit();
-            } catch (PDOException $e) {
-                $error = "Failed to schedule vaccine.";
+            $stmt->execute([
+                ':child_id' => $childId,
+                ':vaccine_name' => $vaccineName,
+                ':dose_number' => $doseNumber
+            ]);
+            $existingVaccine = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($existingVaccine) {
+                if ($existingVaccine['status'] === 'Administered') {
+                    throw new Exception("This dose has already been administered and cannot be scheduled again.");
+                }
             }
+            
+            // Create the appointment first
+            $stmt = $conn->prepare("
+                INSERT INTO appointments (
+                    child_id, scheduled_date, status, notes
+                ) VALUES (
+                    :child_id, :scheduled_date, 'scheduled', :notes
+                )
+            ");
+            $stmt->execute([
+                ':child_id' => $childId,
+                ':scheduled_date' => $scheduledDate,
+                ':notes' => "Scheduled vaccination: $vaccineName (Dose $doseNumber)"
+            ]);
+            $appointmentId = $conn->lastInsertId();
+            
+            // Create the vaccination record
+            $stmt = $conn->prepare("
+                INSERT INTO vaccinations (
+                    child_id, vaccine_name, dose_number, scheduled_date, status, notes
+                ) VALUES (
+                    :child_id, :vaccine_name, :dose_number, :scheduled_date, 'Scheduled', :notes
+                )
+            ");
+            $stmt->execute([
+                ':child_id' => $childId,
+                ':vaccine_name' => $vaccineName,
+                ':dose_number' => $doseNumber,
+                ':scheduled_date' => $scheduledDate,
+                ':notes' => $notes
+            ]);
+            
+            // Link vaccine to appointment
+            $stmt = $conn->prepare("
+                INSERT INTO appointment_vaccines (
+                    appointment_id, vaccine_name, dose_number, status
+                ) VALUES (
+                    :appointment_id, :vaccine_name, :dose_number, 'scheduled'
+                )
+            ");
+            $stmt->execute([
+                ':appointment_id' => $appointmentId,
+                ':vaccine_name' => $vaccineName,
+                ':dose_number' => $doseNumber
+            ]);
+            
+            // Update subsequent vaccine schedules
+            // Get all scheduled vaccines after this date
+            $stmt = $conn->prepare("
+                SELECT 
+                    v.vaccine_name, 
+                    v.dose_number, 
+                    v.scheduled_date,
+                    vs.age_unit,
+                    vs.age_value,
+                    vac.max_doses
+                FROM vaccinations v
+                JOIN vaccine_schedule vs ON v.vaccine_name = vs.vaccine_name 
+                    AND v.dose_number = vs.dose_number
+                LEFT JOIN vaccines vac ON v.vaccine_name = vac.vaccine_name
+                WHERE v.child_id = :child_id 
+                AND v.status = 'Scheduled'
+                AND v.scheduled_date > :scheduled_date
+                ORDER BY v.scheduled_date ASC
+            ");
+            $stmt->execute([
+                ':child_id' => $childId,
+                ':scheduled_date' => $scheduledDate
+            ]);
+            $subsequentVaccines = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Calculate new dates for subsequent vaccines
+            $lastDate = new DateTime($scheduledDate);
+            foreach ($subsequentVaccines as $vaccine) {
+                // Add minimum gap days to last vaccination date
+                $newDate = clone $lastDate;
+                $newDate->modify("+{$vaccine['minimum_gap_days']} days");
+                
+                // Update the vaccination schedule
+                $stmt = $conn->prepare("
+                    UPDATE vaccinations 
+                    SET scheduled_date = :new_date
+                    WHERE child_id = :child_id 
+                    AND vaccine_name = :vaccine_name 
+                    AND dose_number = :dose_number
+                ");
+                $stmt->execute([
+                    ':new_date' => $newDate->format('Y-m-d'),
+                    ':child_id' => $childId,
+                    ':vaccine_name' => $vaccine['vaccine_name'],
+                    ':dose_number' => $vaccine['dose_number']
+                ]);
+                
+                // Also update the associated appointment
+                $stmt = $conn->prepare("
+                    UPDATE appointments a
+                    JOIN appointment_vaccines av ON a.id = av.appointment_id
+                    SET a.scheduled_date = :new_date
+                    WHERE a.child_id = :child_id 
+                    AND av.vaccine_name = :vaccine_name 
+                    AND av.dose_number = :dose_number
+                ");
+                $stmt->execute([
+                    ':new_date' => $newDate->format('Y-m-d'),
+                    ':child_id' => $childId,
+                    ':vaccine_name' => $vaccine['vaccine_name'],
+                    ':dose_number' => $vaccine['dose_number']
+                ]);
+                
+                $lastDate = $newDate;
+            }
+            
+            $conn->commit();
+            header("Location: child_profile.php?id=$childId&success=2");
+            exit();
+            
+        } catch (Exception $e) {
+            $conn->rollBack();
+            $error = "Failed to schedule vaccine: " . $e->getMessage();
         }
     }
 
@@ -328,12 +689,142 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = "Failed to update medical history.";
         }
     }
+
+    // When recording a vaccination, add validation to check the scheduled date
+    if (isset($_POST['record_vaccination'])) {
+        $vaccineId = $_POST['vaccine_id'];
+        $childId = $_POST['child_id'];
+        $vaccineName = $_POST['vaccine_name'];
+        $doseNumber = $_POST['dose_number'];
+        $administeredDate = $_POST['administered_date'];
+        $notes = $_POST['notes'];
+
+        try {
+            // Get the scheduled date for this vaccine dose
+            $scheduledDateStmt = $conn->prepare("
+                SELECT scheduled_date 
+                FROM vaccinations 
+                WHERE child_id = :child_id 
+                AND vaccine_name = :vaccine_name 
+                AND dose_number = :dose_number
+                AND status = 'Scheduled'
+            ");
+
+            $scheduledDateStmt->execute([
+                ':child_id' => $childId,
+                ':vaccine_name' => $vaccineName,
+                ':dose_number' => $doseNumber
+            ]);
+
+            $scheduledDate = $scheduledDateStmt->fetch(PDO::FETCH_COLUMN);
+
+            // Compare administered date with scheduled date
+            $scheduledDateTime = new DateTime($scheduledDate);
+            $administeredDateTime = new DateTime($administeredDate);
+            $today = new DateTime();
+
+            if ($administeredDateTime > $today) {
+                throw new Exception("Administration date cannot be in the future.");
+            } 
+            
+            if ($scheduledDate && $administeredDateTime < $scheduledDateTime) {
+                throw new Exception("This vaccine dose cannot be administered before its scheduled date (" . $scheduledDate . ").");
+            }
+
+            // Start transaction
+            $conn->beginTransaction();
+
+            // Update the vaccination record
+            $stmt = $conn->prepare("
+                UPDATE vaccinations 
+                SET administered_date = :administered_date,
+                    administered_by = :administered_by,
+                    status = 'Administered',
+                    notes = :notes
+                WHERE child_id = :child_id 
+                AND vaccine_name = :vaccine_name 
+                AND dose_number = :dose_number
+            ");
+
+            $stmt->execute([
+                ':administered_date' => $administeredDate,
+                ':administered_by' => $_SESSION['user']['name'],
+                ':notes' => $notes,
+                ':child_id' => $childId,
+                ':vaccine_name' => $vaccineName,
+                ':dose_number' => $doseNumber
+            ]);
+
+            // Update the appointment_vaccines table
+            $appointmentStmt = $conn->prepare("
+                UPDATE appointment_vaccines 
+                SET status = 'completed' 
+                WHERE vaccine_name = :vaccine_name 
+                AND dose_number = :dose_number 
+                AND appointment_id IN (
+                    SELECT id FROM appointments WHERE child_id = :child_id
+                )
+            ");
+
+            $appointmentStmt->execute([
+                ':vaccine_name' => $vaccineName,
+                ':dose_number' => $doseNumber,
+                ':child_id' => $childId
+            ]);
+
+            $conn->commit();
+            $success = "Vaccination recorded successfully!";
+            
+            header("Location: child_profile.php?id=$childId&success=1");
+            exit();
+
+        } catch (Exception $e) {
+            if ($conn->inTransaction()) {
+                $conn->rollBack();
+            }
+            $error = $e->getMessage();
+        }
+    }
 }
 
-// Define success messages
+// After the form processing and before the HTML starts, add this to refresh data:
+if (isset($_GET['success']) && $_GET['success'] == '1') {
+    // Refresh the takenVaccines data 
+    $stmt = $conn->prepare("
+        SELECT vaccine_name, dose_number 
+        FROM vaccinations 
+        WHERE child_id = :child_id AND status = 'Administered'
+    ");
+    $stmt->execute([':child_id' => $childId]);
+    $takenVaccinesRaw = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Recreate the structured array
+    $takenVaccines = [];
+    foreach ($takenVaccinesRaw as $vaccine) {
+        $name = $vaccine['vaccine_name'];
+        $dose = $vaccine['dose_number'];
+        
+        if (!isset($takenVaccines[$name])) {
+            $takenVaccines[$name] = [];
+        }
+        
+        $takenVaccines[$name][] = $dose;
+    }
+    
+    // Recalculate progress
+    $uniqueTakenVaccineNames = count(array_keys($takenVaccines));
+    
+    if ($totalVaccineTypes > 0) {
+        $progress = ($uniqueTakenVaccineNames / $totalVaccineTypes) * 100;
+    }
+}
+
+// Enhance success message display
 if (isset($_GET['success'])) {
     $messages = [
-        1 => "Vaccine recorded successfully!",
+        1 => isset($_GET['vaccine']) && isset($_GET['dose']) ? 
+             "Successfully recorded " . htmlspecialchars($_GET['vaccine']) . " (Dose " . htmlspecialchars($_GET['dose']) . ")!" :
+             "Vaccine recorded successfully!",
         2 => "Vaccine scheduled successfully!",
         3 => "Child details updated successfully!",
         4 => "Personal information updated successfully!",
@@ -372,6 +863,34 @@ if (isset($_GET['success'])) {
         
         .scrollbar-thin::-webkit-scrollbar-thumb:hover {
             background: #6b7280;
+        }
+        
+        /* Style for dropdown options */
+        select option {
+            padding: 8px;
+            background-color: #1f2937; /* dark gray background */
+            color: white;
+        }
+        
+        select option:hover {
+            background-color: #374151;
+        }
+        
+        select option:disabled {
+            color: #6b7280;
+            font-style: italic;
+        }
+        
+        /* Remove default select arrow in modern browsers */
+        select {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+        }
+        
+        /* Remove default select arrow in IE */
+        select::-ms-expand {
+            display: none;
         }
     </style>
 </head>
@@ -717,7 +1236,7 @@ if (isset($_GET['success'])) {
                     
                     <div class="text-center">
                         <p class="text-gray-400 text-sm">
-                            <span class="text-blue-400 font-semibold"><?php echo $takenVaccines; ?></span> of 
+                            <span class="text-blue-400 font-semibold"><?php echo $uniqueTakenVaccineNames; ?></span> of 
                             <span class="text-blue-400 font-semibold"><?php echo $totalVaccineTypes; ?></span> vaccines completed
                         </p>
                     </div>
@@ -740,23 +1259,67 @@ if (isset($_GET['success'])) {
                                 <div>
                                     <label class="block text-sm font-medium text-gray-400 mb-2">Select Vaccine</label>
                                     <div class="relative">
-                                        <select name="vaccine_name" required 
+                                        <select id="vaccine_select" name="vaccine_name" required 
                                                 class="block w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
                                                        shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500/50
                                                        transition-colors appearance-none">
-                                            <option value="">-- Select Vaccine --</option>
-                                            <?php foreach ($vaccineOptions as $vaccine): ?>
-                                                <option value="<?php echo htmlspecialchars($vaccine); ?>">
-                                                    <?php echo htmlspecialchars($vaccine); ?>
+                                            <option value="" class="bg-gray-800">Select a vaccine...</option>
+                                            <?php foreach ($availableVaccines as $vaccine): 
+                                                $takenDoses = isset($takenVaccines[$vaccine['vaccine_name']]) ? 
+                                                             count($takenVaccines[$vaccine['vaccine_name']]) : 0;
+                                                $isFullyAdministered = $takenDoses >= $vaccine['max_doses'];
+                                            ?>
+                                                <option value="<?php echo htmlspecialchars($vaccine['vaccine_name']); ?>"
+                                                        data-max-doses="<?php echo htmlspecialchars($vaccine['max_doses']); ?>"
+                                                        data-description="<?php echo htmlspecialchars($vaccine['description']); ?>"
+                                                        data-target-disease="<?php echo htmlspecialchars($vaccine['target_disease']); ?>"
+                                                        data-taken-doses="<?php echo $takenDoses; ?>"
+                                                        <?php echo $isFullyAdministered ? 'disabled' : ''; ?>
+                                                        class="bg-gray-800">
+                                                    <?php 
+                                                        echo htmlspecialchars($vaccine['vaccine_name']);
+                                                        if ($takenDoses > 0) {
+                                                            echo " (" . $takenDoses . "/" . $vaccine['max_doses'] . " doses)";
+                                                        }
+                                                        if ($isFullyAdministered) {
+                                                            echo " - Completed";
+                                                        }
+                                                    ?>
                                                 </option>
                                             <?php endforeach; ?>
                                         </select>
                                         <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                            <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                                <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
                                             </svg>
                                         </div>
                                     </div>
+                                    <!-- Vaccine Information Display -->
+                                    <div id="vaccine_info" class="mt-2 text-sm text-gray-400 hidden">
+                                        <p id="vaccine_description" class="mb-1"></p>
+                                        <p id="vaccine_target" class="text-blue-400"></p>
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-400 mb-2">Dose Number</label>
+                                    <div class="flex items-center space-x-2">
+                                        <input type="number" name="dose_number" id="dose_number" min="1" required
+                                               class="block w-24 bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
+                                                      shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500/50
+                                                      transition-colors">
+                                        <span id="dose_max_indicator" class="text-gray-400"></span>
+                                    </div>
+                                    <p id="dose_help_text" class="mt-1 text-sm text-gray-500 italic"></p>
+                                    <div id="taken_doses_info" class="mt-1 text-sm text-yellow-500 italic"></div>
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-400 mb-2">Notes (Optional)</label>
+                                    <textarea name="notes" rows="2" 
+                                              class="block w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
+                                                     shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500/50
+                                                     transition-colors"></textarea>
                                 </div>
                                 
                                 <div>
@@ -769,7 +1332,7 @@ if (isset($_GET['success'])) {
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
                                                 d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                         </svg>
-                                        <span>Record as Taken</span>
+                                        <span>Record Vaccination</span>
                                     </button>
                                 </div>
                             </form>
@@ -780,51 +1343,68 @@ if (isset($_GET['success'])) {
                             <h2 class="text-xl font-bold text-white flex items-center mb-6">
                                 <svg class="w-6 h-6 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
                                 </svg>
                                 Schedule Vaccine
                             </h2>
                             
                             <form method="POST" class="space-y-4">
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-400 mb-2">Select Vaccine</label>
+                                    <label class="block text-sm font-medium text-gray-400 mb-2">Vaccine</label>
                                     <div class="relative">
-                                        <select name="vaccine_name" required 
+                                        <select id="schedule_vaccine_select" name="vaccine_name" required 
                                                 class="block w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
                                                        shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50
                                                        transition-colors appearance-none">
-                                            <option value="">-- Select Vaccine --</option>
-                                            <?php foreach ($vaccineOptions as $vaccine): ?>
-                                                <option value="<?php echo htmlspecialchars($vaccine); ?>">
-                                                    <?php echo htmlspecialchars($vaccine); ?>
+                                            <option value="" class="bg-gray-800">Select a vaccine...</option>
+                                            <?php foreach ($availableVaccines as $vaccine): 
+                                                $isFullyAdministered = isset($takenVaccines[$vaccine['vaccine_name']]) && 
+                                                             count($takenVaccines[$vaccine['vaccine_name']]) >= $vaccine['max_doses'];
+                                            ?>
+                                                <option value="<?php echo htmlspecialchars($vaccine['vaccine_name']); ?>"
+                                                        data-max-doses="<?php echo htmlspecialchars($vaccine['max_doses']); ?>"
+                                                        <?php echo $isFullyAdministered ? 'disabled' : ''; ?>
+                                                        class="bg-gray-800">
+                                                    <?php echo htmlspecialchars($vaccine['vaccine_name']); ?>
+                                                    <?php if ($isFullyAdministered): ?> (All doses administered)<?php endif; ?>
                                                 </option>
                                             <?php endforeach; ?>
                                         </select>
+                                        <!-- Add a custom dropdown arrow -->
                                         <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                            <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                                <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
                                             </svg>
                                         </div>
                                     </div>
                                 </div>
                                 
-                                <div class="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-400 mb-2">Date</label>
-                                        <input type="date" name="scheduled_date" required min="<?php echo date('Y-m-d'); ?>"
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-400 mb-2">Dose Number</label>
+                                    <div class="flex items-center space-x-2">
+                                        <input type="number" name="dose_number" id="schedule_dose_number" min="1" max="10" value="1" required
                                                class="block w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
                                                       shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50
                                                       transition-colors">
+                                        <div id="schedule_dose_max_indicator" class="hidden text-gray-400 whitespace-nowrap"></div>
                                     </div>
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-400 mb-2">Time</label>
-                                        <input type="time" name="scheduled_time" required
-                                               class="block w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
-                                                      shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50
-                                                      transition-colors">
-                                    </div>
+                                    <div id="schedule_taken_doses_info" class="mt-1 text-sm text-yellow-500 italic hidden"></div>
                                 </div>
                                 
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-400 mb-2">Date</label>
+                                    <input type="date" name="scheduled_date" required min="<?php echo date('Y-m-d'); ?>"
+                                           class="block w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
+                                                  shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50
+                                                  transition-colors">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-400 mb-2">Time</label>
+                                    <input type="time" name="scheduled_time" required
+                                           class="block w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
+                                                  shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50
+                                                  transition-colors">
+                                </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-400 mb-2">Notes (Optional)</label>
                                     <textarea name="notes" rows="2" 
@@ -857,7 +1437,7 @@ if (isset($_GET['success'])) {
                 <h2 class="text-xl font-bold text-white flex items-center mb-6">
                     <svg class="w-5 h-5 mr-2 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2H9z"/>
                     </svg>
                     Vaccination History
                 </h2>
@@ -893,12 +1473,13 @@ if (isset($_GET['success'])) {
                             <?php endif; ?>
                             
                             <?php foreach ($vaccinations as $vaccination): ?>
-                            <tr class="hover:bg-gray-700/20 transition-colors duration-150">
+                            <tr class="hover:bg-gray-700/20 transition-colors duration-150 <?php echo $vaccination['status'] === 'Administered' ? 'bg-green-900/10' : ''; ?>">
                                 <td class="py-4 px-6 text-white font-medium">
                                     <?php echo htmlspecialchars($vaccination['vaccine_name']); ?>
+                                    <span class="text-xs text-gray-400 ml-1">(Dose <?php echo htmlspecialchars($vaccination['dose_number']); ?>)</span>
                                 </td>
                                 <td class="py-4 px-6">
-                                    <?php if ($vaccination['status'] === 'Taken'): ?>
+                                    <?php if ($vaccination['status'] === 'Administered'): ?>
                                         <span class="px-3 py-1 rounded-full text-xs font-medium bg-green-500/10 text-green-400 border border-green-500/20">
                                             Completed
                                         </span>
@@ -910,8 +1491,8 @@ if (isset($_GET['success'])) {
                                 </td>
                                 <td class="py-4 px-6 text-gray-300">
                                     <?php 
-                                        $date = $vaccination['status'] === 'Taken' 
-                                              ? $vaccination['date_taken'] 
+                                        $date = $vaccination['status'] === 'Administered' 
+                                              ? $vaccination['administered_date'] 
                                               : $vaccination['scheduled_date'];
                                     echo date('M d, Y', strtotime($date));
                                 ?>
@@ -963,6 +1544,49 @@ if (isset($_GET['success'])) {
     </script>
     <?php endif; ?>
 
+    <!-- Error Notification -->
+    <?php if (isset($error)): ?>
+    <div id="errorNotification" 
+         class="fixed top-24 right-4 z-50 bg-red-500 text-white px-6 py-4 rounded-lg shadow-lg 
+                animate__animated animate__fadeInRight flex items-center">
+        <div class="flex-shrink-0 mr-4">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                      d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+        </div>
+        <div>
+            <h3 class="font-semibold mb-1">Unable to Record Vaccine</h3>
+            <p class="text-sm"><?php echo htmlspecialchars($error); ?></p>
+        </div>
+        <button onclick="dismissError()" class="ml-4 text-white hover:text-red-100">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+        </button>
+    </div>
+
+    <script>
+        // Add this to your existing script section or create a new one
+        function dismissError() {
+            const errorNotification = document.getElementById('errorNotification');
+            if (errorNotification) {
+                errorNotification.classList.replace('animate__fadeInRight', 'animate__fadeOutRight');
+                setTimeout(() => {
+                    errorNotification.remove();
+                }, 1000);
+            }
+        }
+
+        // Auto-dismiss error after 5 seconds
+        if (document.getElementById('errorNotification')) {
+            setTimeout(() => {
+                dismissError();
+            }, 5000);
+        }
+    </script>
+    <?php endif; ?>
+
     <!-- Scripts -->
     <script>
         // Edit Modal Functionality
@@ -1004,6 +1628,123 @@ if (isset($_GET['success'])) {
             viewMode.classList.toggle('hidden');
             editMode.classList.toggle('hidden');
         }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const vaccineSelect = document.getElementById('vaccine_select');
+            const doseInput = document.getElementById('dose_number');
+            const doseHelpText = document.getElementById('dose_help_text');
+            const doseMaxIndicator = document.getElementById('dose_max_indicator');
+            const takenDosesInfo = document.getElementById('taken_doses_info');
+            
+            // Store taken vaccines data
+            const takenVaccines = <?php echo json_encode($takenVaccines); ?>;
+            
+            if (vaccineSelect && doseInput) {
+                vaccineSelect.addEventListener('change', function() {
+                    const selectedOption = this.options[this.selectedIndex];
+                    const maxDoses = parseInt(selectedOption.dataset.maxDoses) || 0;
+                    const description = selectedOption.dataset.description;
+                    const targetDisease = selectedOption.dataset.targetDisease;
+                    const takenDoses = parseInt(selectedOption.dataset.takenDoses) || 0;
+                    const vaccineName = selectedOption.value;
+
+                    // Update dose input constraints
+                    doseInput.max = maxDoses;
+                    doseMaxIndicator.textContent = maxDoses > 0 ? `/ ${maxDoses}` : '';
+
+                    // Show vaccine information
+                    if (description || targetDisease) {
+                        vaccineInfo.classList.remove('hidden');
+                        vaccineDescription.textContent = description;
+                        vaccineTarget.textContent = targetDisease ? `Protects against: ${targetDisease}` : '';
+                    } else {
+                        vaccineInfo.classList.add('hidden');
+                    }
+
+                    // Update dose help text
+                    if (maxDoses > 0) {
+                        doseHelpText.textContent = `This vaccine requires ${maxDoses} dose${maxDoses > 1 ? 's' : ''} in total`;
+                            doseHelpText.classList.remove('hidden');
+                        } else {
+                            doseHelpText.classList.add('hidden');
+                    }
+
+                    // Show taken doses information
+                    if (takenDoses > 0) {
+                        const takenDosesArray = takenVaccines[vaccineName] || [];
+                        takenDosesInfo.textContent = `Previously taken doses: ${takenDosesArray.join(', ')}`;
+                            takenDosesInfo.classList.remove('hidden');
+                        
+                        // Set default dose number to next required dose
+                        const nextDose = takenDosesArray.length + 1;
+                        if (nextDose <= maxDoses) {
+                            doseInput.value = nextDose;
+                        }
+                        } else {
+                            takenDosesInfo.classList.add('hidden');
+                        doseInput.value = 1;
+                    }
+                });
+
+                // Validate dose number on input
+                doseInput.addEventListener('input', function() {
+                    const selectedOption = vaccineSelect.options[vaccineSelect.selectedIndex];
+                    const maxDoses = parseInt(selectedOption.dataset.maxDoses) || 0;
+                    const value = parseInt(this.value) || 0;
+
+                    if (value > maxDoses) {
+                        this.value = maxDoses;
+                    } else if (value < 1) {
+                        this.value = 1;
+                    }
+                });
+            }
+            
+            // Similar enhancements for the scheduling form
+            const scheduleVaccineSelect = document.getElementById('schedule_vaccine_select');
+            const scheduleDoseInput = document.getElementById('schedule_dose_number');
+            const scheduleDoseMaxIndicator = document.getElementById('schedule_dose_max_indicator');
+            const scheduleTakenDosesInfo = document.getElementById('schedule_taken_doses_info');
+            
+            if (scheduleVaccineSelect && scheduleDoseInput) {
+                scheduleVaccineSelect.addEventListener('change', function() {
+                    if (!this.value) return;
+                    
+                    const maxDoses = parseInt(this.options[this.selectedIndex].dataset.maxDoses) || 1;
+                    const vaccineName = this.value;
+                    
+                    // Set max attribute on dose input
+                    scheduleDoseInput.max = maxDoses;
+                    
+                    // Show max doses indicator
+                    if (scheduleDoseMaxIndicator) {
+                        scheduleDoseMaxIndicator.textContent = `(max: ${maxDoses})`;
+                        scheduleDoseMaxIndicator.classList.remove('hidden');
+                    }
+                    
+                    // Show already taken doses info and disable taken doses
+                    if (scheduleTakenDosesInfo) {
+                        if (takenVaccines[vaccineName] && takenVaccines[vaccineName].length > 0) {
+                            const takenDosesArray = takenVaccines[vaccineName].map(d => parseInt(d)).sort((a, b) => a - b);
+                            scheduleTakenDosesInfo.textContent = `Doses already administered: ${takenDosesArray.join(', ')}`;
+                            scheduleTakenDosesInfo.classList.remove('hidden');
+                            
+                            // Set the dose input to the next available dose
+                            let nextDose = 1;
+                            while (takenDosesArray.includes(nextDose) && nextDose <= maxDoses) {
+                                nextDose++;
+                            }
+                            if (nextDose <= maxDoses) {
+                                scheduleDoseInput.value = nextDose;
+                            }
+                        } else {
+                            scheduleTakenDosesInfo.classList.add('hidden');
+                            scheduleDoseInput.value = 1;
+                        }
+                    }
+                });
+            }
+        });
     </script>
 </body>
 </html>

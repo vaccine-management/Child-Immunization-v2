@@ -58,11 +58,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $allergies = trim($_POST['allergies']);
     $previousVaccinations = trim($_POST['previous_vaccinations']);
 
+    // Add registration date
+    $registrationDate = date('Y-m-d'); 
+
+    // Add date validation
+    $today = new DateTime();
+    $inputDate = new DateTime($dateOfBirth);
+    
     // Validate required inputs
     if (empty($fullName) || empty($dateOfBirth) || empty($gender) || empty($guardianName) || empty($phone)) {
         $error = "Required fields must be filled out.";
     } elseif ($birthWeight <= 0) {
         $error = "Birth weight must be a positive number.";
+    } elseif ($inputDate > $today) {
+        $error = "Date of birth cannot be in the future.";
     } else {
         // Generate child_id
         $childID = generateChildID($fullName, $guardianName, $dateOfBirth);
@@ -71,11 +80,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $conn->prepare("INSERT INTO children (
             child_id, full_name, date_of_birth, gender, birth_weight, place_of_birth,
             guardian_name, phone, email, address,
-            birth_complications, allergies, previous_vaccinations
+            birth_complications, allergies, previous_vaccinations, registration_date
         ) VALUES (
             :child_id, :full_name, :date_of_birth, :gender, :birth_weight, :place_of_birth,
             :guardian_name, :phone, :email, :address,
-            :birth_complications, :allergies, :previous_vaccinations
+            :birth_complications, :allergies, :previous_vaccinations, :registration_date
         )");
         
         try {
@@ -92,8 +101,185 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':address' => $address,
                 ':birth_complications' => $birthComplications,
                 ':allergies' => $allergies,
-                ':previous_vaccinations' => $previousVaccinations
+                ':previous_vaccinations' => $previousVaccinations,
+                ':registration_date' => $registrationDate
             ]);
+
+            // Generate automatic vaccination schedule for the newly registered child
+            try {
+                // Fetch vaccine schedule information - ordered by age for proper scheduling
+                $scheduleStmt = $conn->query("
+                    SELECT id, vaccine_name, age_unit, age_value, dose_number, 
+                           administration_method, dosage, target_disease, notes 
+                    FROM vaccine_schedule 
+                    ORDER BY 
+                        CASE age_unit 
+                            WHEN 'days' THEN age_value
+                            WHEN 'weeks' THEN age_value * 7
+                            WHEN 'months' THEN age_value * 30
+                            WHEN 'years' THEN age_value * 365
+                        END ASC,
+                        dose_number ASC
+                ");
+                $vaccineSchedules = $scheduleStmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                // Group vaccines by their scheduled date from birth
+                $groupedVaccinesByDate = [];
+                $registrationDateTime = new DateTime($registrationDate);
+                
+                foreach ($vaccineSchedules as $vaccine) {
+                    // Create a proper date interval based on the unit and value
+                    $scheduleDate = clone $registrationDateTime; // Use registration date instead of birth date
+                    
+                    switch ($vaccine['age_unit']) {
+                        case 'days':
+                            $scheduleDate->add(new DateInterval('P' . $vaccine['age_value'] . 'D'));
+                            break;
+                        case 'weeks':
+                            $scheduleDate->add(new DateInterval('P' . ($vaccine['age_value'] * 7) . 'D'));
+                            break;
+                        case 'months':
+                            $scheduleDate->add(new DateInterval('P' . $vaccine['age_value'] . 'M'));
+                            break;
+                        case 'years':
+                            $scheduleDate->add(new DateInterval('P' . $vaccine['age_value'] . 'Y'));
+                            break;
+                    }
+                    
+                    $appointmentDate = $scheduleDate->format('Y-m-d');
+                    
+                    if (!isset($groupedVaccinesByDate[$appointmentDate])) {
+                        $groupedVaccinesByDate[$appointmentDate] = [];
+                    }
+                    $groupedVaccinesByDate[$appointmentDate][] = $vaccine;
+                }
+                
+                // Create appointments for each date
+                foreach ($groupedVaccinesByDate as $appointmentDate => $vaccines) {
+                    // Skip past dates - only schedule future appointments
+                    $today = date('Y-m-d');
+                    if ($appointmentDate < $today) {
+                        // For vaccines that should have been taken already (e.g., birth vaccines for older children)
+                        // You could either skip them or mark them as 'Missed'
+                        continue;
+                    }
+                    
+                    // Set default appointment time
+                    $appointmentTime = '09:00:00';
+                    
+                    // Get the age description for the first vaccine in this group
+                    $firstVaccine = $vaccines[0];
+                    $ageDescription = $firstVaccine['age_value'] . ' ' . $firstVaccine['age_unit'];
+                    
+                    // Create a single appointment record for this date
+                    $appointmentNotes = count($vaccines) . " vaccine(s) scheduled for " . 
+                                       date('F j, Y', strtotime($appointmentDate)) . 
+                                       " (" . $ageDescription . ")";
+                    
+                    $stmt = $conn->prepare("
+                        INSERT INTO appointments (
+                            child_id, scheduled_date, status, notes
+                        ) VALUES (
+                            :child_id, :scheduled_date, 'scheduled', :notes
+                        )
+                    ");
+                    
+                    $stmt->execute([
+                        ':child_id' => $childID,
+                        ':scheduled_date' => $appointmentDate,
+                        ':notes' => $appointmentNotes
+                    ]);
+                    
+                    // Get the appointment ID
+                    $appointmentId = $conn->lastInsertId();
+                    
+                    // Create individual vaccination records for each vaccine
+                    foreach ($vaccines as $vaccine) {
+                        $vaccineName = $vaccine['vaccine_name'];
+                        $doseNumber = $vaccine['dose_number'];
+                        
+                        // Create detailed notes with all available information
+                        $detailedNotes = "Scheduled " . $vaccine['age_value'] . " " . $vaccine['age_unit'];
+                        
+                        if (!empty($vaccine['administration_method'])) {
+                            $detailedNotes .= " | Method: " . $vaccine['administration_method'];
+                        }
+                        
+                        if (!empty($vaccine['dosage'])) {
+                            $detailedNotes .= " | Dosage: " . $vaccine['dosage'];
+                        }
+                        
+                        if (!empty($vaccine['target_disease'])) {
+                            $detailedNotes .= " | Protects against: " . $vaccine['target_disease'];
+                        }
+                        
+                        if (!empty($vaccine['notes'])) {
+                            $detailedNotes .= " | " . $vaccine['notes'];
+                        }
+                        
+                        // Insert into the vaccinations table
+                        $vaccineStmt = $conn->prepare("
+                            INSERT INTO vaccinations (
+                                child_id, 
+                                vaccine_name, 
+                                dose_number,
+                                scheduled_date, 
+                                scheduled_time, 
+                                status, 
+                                notes
+                            ) VALUES (
+                                :child_id,
+                                :vaccine_name,
+                                :dose_number, 
+                                :scheduled_date,
+                                :scheduled_time,
+                                'Scheduled',
+                                :notes
+                            )
+                        ");
+                        
+                        $vaccineStmt->execute([
+                            ':child_id' => $childID,
+                            ':vaccine_name' => $vaccineName,
+                            ':dose_number' => $doseNumber,
+                            ':scheduled_date' => $appointmentDate,
+                            ':scheduled_time' => $appointmentTime,
+                            ':notes' => $detailedNotes
+                        ]);
+                        
+                        // Insert into the appointment_vaccines table
+                        $apptVaccineStmt = $conn->prepare("
+                            INSERT INTO appointment_vaccines (
+                                appointment_id,
+                                vaccine_name,
+                                dose_number,
+                                status
+                            ) VALUES (
+                                :appointment_id,
+                                :vaccine_name,
+                                :dose_number,
+                                'scheduled'
+                            )
+                        ");
+                        
+                        $apptVaccineStmt->execute([
+                            ':appointment_id' => $appointmentId,
+                            ':vaccine_name' => $vaccineName,
+                            ':dose_number' => $doseNumber
+                        ]);
+                    }
+                }
+                
+                // Add a success message about the schedule generation
+                $success = "Child registered successfully and vaccination schedule has been created!";
+                
+            } catch (PDOException $e) {
+                // Log the error but don't prevent child registration if schedule generation fails
+                error_log("Failed to generate vaccination schedule: " . $e->getMessage());
+                // Still redirect with basic success message
+                $success = "Child registered successfully!";
+            }
+
             header("Location: children.php?success=1");
             exit();
         } catch (PDOException $e) {
@@ -552,6 +738,27 @@ if (isset($_GET['success'])) {
             url.searchParams.delete('success');
             history.replaceState(null, '', url);
         }
+
+        // Date of birth validation
+        const dateOfBirthInput = document.getElementById('date_of_birth');
+        
+        // Set max date to today
+        const today = new Date();
+        const dd = String(today.getDate()).padStart(2, '0');
+        const mm = String(today.getMonth() + 1).padStart(2, '0'); // January is 0!
+        const yyyy = today.getFullYear();
+        const maxDate = yyyy + '-' + mm + '-' + dd;
+        
+        dateOfBirthInput.setAttribute('max', maxDate);
+        
+        // Add event listener to validate date
+        dateOfBirthInput.addEventListener('change', function() {
+            const selectedDate = new Date(this.value);
+            if (selectedDate > today) {
+                alert('Date of birth cannot be in the future');
+                this.value = ''; // Clear the invalid date
+            }
+        });
     </script>
 </body>
 </html>

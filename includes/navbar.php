@@ -36,9 +36,14 @@ $profileImage = $_SESSION['user']['profile_image'] ?? null;
         <div class="flex items-center justify-between h-16">
             <!-- Logo Section -->
             <div class="flex items-center space-x-8">
+                <!-- Mobile menu toggle button -->
+                <button id="mobile-menu-button" class="block lg:hidden text-gray-300 focus:outline-none">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+                
                 <div class="flex items-center">
-                    <div class="h-10 w-10 rounded-lg overflow-hidden shadow-lg ring-2 ring-blue-500/30">
-                        <img src="assets/login.jpg" alt="Logo" class="h-full w-full object-cover">
+                    <div class="h-10 w-10 rounded-lg overflow-hidden shadow-lg bg-blue-500/10 flex items-center justify-center ring-2 ring-blue-500/30">
+                        <i class="fas fa-heartbeat text-blue-400 text-xl"></i>
                     </div>
                     <div class="ml-3">
                         <h1 class="text-xl font-bold bg-gradient-to-r from-white via-blue-100 to-white bg-clip-text text-transparent tracking-wide">
@@ -49,6 +54,17 @@ $profileImage = $_SESSION['user']['profile_image'] ?? null;
                 </div>
             </div>
 
+            <!-- Search Input -->
+            <div class="hidden md:flex items-center bg-gray-800/50 rounded-lg px-4 py-2 max-w-md w-1/3 ml-4">
+                <i class="fas fa-search text-gray-400 mr-2"></i>
+                <input 
+                    type="text" 
+                    placeholder="Search patients, appointments..." 
+                    class="bg-transparent border-none w-full text-sm focus:outline-none text-gray-300 placeholder-gray-500"
+                    aria-label="Search"
+                >
+            </div>
+
             <!-- Right Side Controls -->
             <div class="flex items-center space-x-6">
                 <!-- Notifications -->
@@ -57,16 +73,11 @@ $profileImage = $_SESSION['user']['profile_image'] ?? null;
                                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800
                                    transition-all duration-200 group"
                             aria-label="View notifications">
-                        <i class="fas fa-bell text-xl"></i>
+                        <i class="fas fa-bell text-lg"></i>
                         <!-- Notification Badge -->
                         <span class="absolute top-1.5 right-1.5 flex h-2.5 w-2.5">
                             <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
                             <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
-                        </span>
-                        <!-- Tooltip -->
-                        <span class="absolute -bottom-12 left-1/2 -translate-x-1/2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg 
-                                   opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap border border-gray-700">
-                            Notifications
                         </span>
                     </button>
 
@@ -114,11 +125,11 @@ $profileImage = $_SESSION['user']['profile_image'] ?? null;
                                    transition-all duration-200 group">
                         <div class="flex items-center space-x-3">
                             <?php if ($profileImage): ?>
-                                <img class="h-9 w-9 rounded-lg object-cover ring-2 ring-blue-500/30" 
+                                <img class="h-8 w-8 rounded-lg object-cover ring-2 ring-blue-500/30" 
                                      src="<?php echo htmlspecialchars($profileImage); ?>" 
                                      alt="Profile">
                             <?php else: ?>
-                                <div class="h-9 w-9 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 
+                                <div class="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 
                                             flex items-center justify-center ring-2 ring-blue-500/30">
                                     <i class="fas fa-user text-white"></i>
                                 </div>
@@ -138,7 +149,7 @@ $profileImage = $_SESSION['user']['profile_image'] ?? null;
                          class="hidden absolute right-0 mt-3 w-64 rounded-lg bg-gray-800 border border-gray-700 shadow-xl">
                         <div class="px-4 py-3 border-b border-gray-700 bg-gradient-to-r from-gray-800 to-gray-700">
                             <p class="text-sm text-gray-400">Signed in as</p>
-                            <p class="text-sm font-medium text-white truncate"><?php echo htmlspecialchars($userName); ?></p>
+                            <p class="text-sm font-medium text-white truncate"><?php echo htmlspecialchars($displayName); ?></p>
                         </div>
                         
                         <div class="py-1">
@@ -170,7 +181,8 @@ const elements = {
     dropdownMenu: document.getElementById('dropdownMenu'),
     notificationBtn: document.querySelector('[aria-label="View notifications"]'),
     notificationsDropdown: document.getElementById('notificationsDropdown'),
-    searchInput: document.querySelector('input[type="text"]')
+    searchInput: document.querySelector('input[aria-label="Search"]'),
+    mobileMenuButton: document.getElementById('mobile-menu-button')
 };
 
 // Animation Classes
@@ -225,13 +237,48 @@ const handlers = {
         if (!elements.notificationBtn.contains(event.target)) {
             elements.notificationsDropdown.classList.add(classes.hidden);
         }
+    },
+    
+    mobileMenuClick: function(event) {
+        // Toggle sidebar visibility on mobile
+        const sidebar = document.querySelector('#sidebar');
+        const mainContent = document.querySelector('#main-content');
+        
+        if (sidebar) {
+            // Toggle mobile classes for sidebar
+            sidebar.classList.toggle('-translate-x-full');
+            sidebar.classList.toggle('translate-x-0');
+            sidebar.classList.toggle('w-64');
+            sidebar.classList.toggle('w-[70px]');
+            
+            // Check if sidebar is now visible or hidden
+            const isVisible = !sidebar.classList.contains('-translate-x-full');
+            
+            // Adjust main content accordingly
+            if (mainContent) {
+                if (isVisible) {
+                    mainContent.classList.add('ml-64');
+                    mainContent.classList.remove('ml-[70px]', 'ml-0');
+                } else {
+                    mainContent.classList.remove('ml-64');
+                    mainContent.classList.add('ml-0');
+                }
+            }
+        }
     }
 };
 
 // Initialize Event Listeners
 function initializeEventListeners() {
-    elements.profileDropdown.addEventListener('click', handlers.profileDropdownClick);
-    elements.notificationBtn.addEventListener('click', handlers.notificationClick);
+    if (elements.profileDropdown) {
+        elements.profileDropdown.addEventListener('click', handlers.profileDropdownClick);
+    }
+    if (elements.notificationBtn) {
+        elements.notificationBtn.addEventListener('click', handlers.notificationClick);
+    }
+    if (elements.mobileMenuButton) {
+        elements.mobileMenuButton.addEventListener('click', handlers.mobileMenuClick);
+    }
     document.addEventListener('keydown', handlers.searchShortcut);
     document.addEventListener('click', handlers.documentClick);
 }

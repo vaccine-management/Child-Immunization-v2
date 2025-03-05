@@ -27,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // Set login success message
         $_SESSION['login_success'] = true;
-        header('Location: index.php');
+        header('Location: dashboard.php');
         exit();
     } else {
         $error = "Invalid email, password, or role.";
@@ -54,19 +54,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
         }
-        .input-icon {
-            top: 50%;
-            transform: translateY(-50%);
-        }
-        .floating-label {
-            transform: translateY(0);
-            font-size: 0.75rem;
-        }
-        .input-with-label:focus + .floating-label,
-        .input-with-label:not(:placeholder-shown) + .floating-label {
-            transform: translateY(-1.5rem);
-            font-size: 0.75rem;
-        }
         .role-card {
             transition: all 0.3s ease;
         }
@@ -84,41 +71,73 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     </style>
 </head>
-<body class="bg-gray-900 h-screen">
-    <!-- Background with overlay -->
-    <div class="relative h-full">
-        <div class="absolute inset-0 login-bg opacity-20"></div>
-        
-        <!-- Abstract shapes for visual interest -->
-        <div class="absolute top-1/4 left-1/4 w-64 h-64 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-float"></div>
-        <div class="absolute bottom-1/3 right-1/4 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-float" style="animation-delay: 2s;"></div>
-        
-        <!-- Login Container -->
-        <div class="min-h-screen flex items-center justify-center px-4 sm:px-6 lg:px-8 relative z-10">
-            <div class="max-w-md w-full space-y-8 animate__animated animate__fadeIn">
+<body class="bg-gray-900">
+    <div class="min-h-screen flex">
+        <!-- Left Side - Information Section -->
+        <div class="hidden lg:flex lg:w-1/2 relative login-bg">
+            <div class="absolute inset-0 bg-gradient-to-b from-blue-900/95 to-gray-900/95"></div>
+            <div class="relative z-10 flex flex-col justify-center px-16">
                 <!-- Logo and Title -->
-                <div class="text-center">
-                    <div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 mb-5 shadow-lg">
-                        <i class="fas fa-syringe text-white text-3xl"></i>
+                <div class="mb-12">
+                    <div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-white/10 backdrop-blur-sm mb-6">
+                        <i class="fas fa-syringe text-blue-400 text-3xl"></i>
                     </div>
-                    <h2 class="text-3xl font-extrabold text-white tracking-tight">Child Immunization</h2>
-                    <p class="mt-2 text-sm text-blue-400">Healthcare Management System</p>
+                    <h1 class="text-4xl font-bold text-white mb-4">Child Immunization System</h1>
+                    <p class="text-xl text-blue-200">Ensuring a healthier future for every child</p>
                 </div>
-
-                <!-- Login Card -->
-                <div class="glass-effect rounded-2xl shadow-2xl overflow-hidden">
-                    <!-- Error Message -->
-                    <?php if (isset($error)): ?>
-                        <div class="bg-red-500/20 border-l-4 border-red-500 p-4 animate__animated animate__headShake">
-                            <div class="flex items-center">
-                                <i class="fas fa-exclamation-circle text-red-400 mr-2"></i>
-                                <p class="text-red-300"><?php echo $error; ?></p>
-                            </div>
+                
+                <!-- Features List -->
+                <div class="space-y-8">
+                    <div class="flex items-center space-x-5">
+                        <div class="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center">
+                            <i class="fas fa-shield-alt text-blue-400 text-xl"></i>
                         </div>
-                    <?php endif; ?>
+                        <div>
+                            <h3 class="text-lg font-semibold text-white">Secure Management</h3>
+                            <p class="text-gray-300">Safe and confidential handling of records</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center space-x-5">
+                        <div class="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center">
+                            <i class="fas fa-chart-line text-blue-400 text-xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold text-white">Real-time Tracking</h3>
+                            <p class="text-gray-300">Monitor immunization progress effectively</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center space-x-5">
+                        <div class="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center">
+                            <i class="fas fa-bell text-blue-400 text-xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold text-white">Smart Notifications</h3>
+                            <p class="text-gray-300">Timely reminders for vaccinations</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
+        <!-- Right Side - Login Form -->
+        <div class="w-full lg:w-1/2 flex items-center justify-center p-8 bg-gray-900">
+            <div class="w-full max-w-md space-y-8 animate__animated animate__fadeIn">
+                <!-- Error Message -->
+                <?php if (isset($error)): ?>
+                    <div class="bg-red-500/20 border-l-4 border-red-500 p-4 animate__animated animate__headShake">
+                        <div class="flex items-center">
+                            <i class="fas fa-exclamation-circle text-red-400 mr-2"></i>
+                            <p class="text-red-300"><?php echo $error; ?></p>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
+                <div class="glass-effect rounded-2xl shadow-2xl overflow-hidden">
                     <div class="p-8">
-                        <h3 class="text-xl font-bold text-white mb-6">Sign in to your account</h3>
+                        <h2 class="text-2xl font-bold text-white mb-2">Welcome Back</h2>
+                        <p class="text-gray-400 mb-6">Please sign in to your account</p>
                         
                         <form id="loginForm" method="POST" class="space-y-6">
                             <!-- Email Input -->
@@ -207,13 +226,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </button>
                         </form>
                     </div>
-                </div>
-                
-                <!-- Footer -->
-                <div class="text-center mt-6">
-                    <p class="text-sm text-gray-400">
-                        © 2023 Child Immunization System. All rights reserved.
-                    </p>
                 </div>
             </div>
         </div>
