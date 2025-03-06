@@ -24,17 +24,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $query = "INSERT INTO inventory (name, batch_number, quantity, expiry_date) VALUES (?, ?, ?, ?)";
         $stmt = $conn->prepare($query);
         $stmt->execute([$name, $batch_number, $quantity, $expiry_date]);
-    } elseif (isset($_POST['update'])) {
-        // Update inventory item
-        $id = $_POST['id'];
-        $name = $_POST['name'];
-        $batch_number = $_POST['batch_number'];
-        $quantity = $_POST['quantity'];
-        $expiry_date = $_POST['expiry_date'];
-
-        $query = "UPDATE inventory SET name = ?, batch_number = ?, quantity = ?, expiry_date = ? WHERE id = ?";
-        $stmt = $conn->prepare($query);
-        $stmt->execute([$name, $batch_number, $quantity, $expiry_date, $id]);
     } elseif (isset($_POST['delete'])) {
         // Delete inventory item
         $id = $_POST['id'];
@@ -107,9 +96,9 @@ $inventory_items = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                     <td class="px-4 py-3 text-sm text-gray-300"><?php echo htmlspecialchars($item['expiry_date']); ?></td>
                                     <td class="px-4 py-3 text-sm">
                                         <div class="flex space-x-2">
-                                            <button onclick="openModal('editModal', <?php echo $item['id']; ?>, '<?php echo $item['name']; ?>', '<?php echo $item['batch_number']; ?>', <?php echo $item['quantity']; ?>, '<?php echo $item['expiry_date']; ?>')" class="text-blue-400 hover:text-blue-300">
+                                            <a href="edit_inventory.php?id=<?php echo $item['id']; ?>" class="text-blue-400 hover:text-blue-300">
                                                 <i class="fas fa-edit"></i>
-                                            </button>
+                                            </a>
                                             <button onclick="openModal('deleteModal', <?php echo $item['id']; ?>)" class="text-red-400 hover:text-red-300">
                                                 <i class="fas fa-trash"></i>
                                             </button>
@@ -161,40 +150,6 @@ $inventory_items = $stmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 
-    <!-- Edit Inventory Modal -->
-    <div id="editModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center">
-        <div class="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 class="text-xl font-bold text-white mb-4">Edit Item</h3>
-            <form method="POST" action="">
-                <input type="hidden" name="id" id="edit-id">
-                <div class="mb-4">
-                    <label for="edit-name" class="block text-gray-300 mb-2">Name</label>
-                    <input type="text" name="name" id="edit-name" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
-                </div>
-                <div class="mb-4">
-                    <label for="edit-batch_number" class="block text-gray-300 mb-2">Batch Number</label>
-                    <input type="text" name="batch_number" id="edit-batch_number" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
-                </div>
-                <div class="mb-4">
-                    <label for="edit-quantity" class="block text-gray-300 mb-2">Quantity</label>
-                    <input type="number" name="quantity" id="edit-quantity" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
-                </div>
-                <div class="mb-4">
-                    <label for="edit-expiry_date" class="block text-gray-300 mb-2">Expiry Date</label>
-                    <input type="date" name="expiry_date" id="edit-expiry_date" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
-                </div>
-                <div class="flex justify-end space-x-4">
-                    <button type="button" onclick="closeModal('editModal')" class="px-4 py-2 text-gray-300 hover:text-white">
-                        Cancel
-                    </button>
-                    <button type="submit" name="update" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                        Update
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-
     <!-- Delete Inventory Modal -->
     <div id="deleteModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center">
         <div class="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
@@ -215,14 +170,8 @@ $inventory_items = $stmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 
     <script>
-        function openModal(modalId, id = null, name = '', batch_number = '', quantity = '', expiry_date = '') {
-            if (modalId === 'editModal') {
-                document.getElementById('edit-id').value = id;
-                document.getElementById('edit-name').value = name;
-                document.getElementById('edit-batch_number').value = batch_number;
-                document.getElementById('edit-quantity').value = quantity;
-                document.getElementById('edit-expiry_date').value = expiry_date;
-            } else if (modalId === 'deleteModal') {
+        function openModal(modalId, id = null) {
+            if (modalId === 'deleteModal') {
                 document.getElementById('delete-id').value = id;
             }
             document.getElementById(modalId).classList.remove('hidden');
