@@ -11,7 +11,7 @@ if (!defined('DASHBOARD_INCLUDE')) {
     <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center">
         <div>
             <h1 class="text-xl sm:text-2xl font-bold text-white">
-                <?php echo $greeting; ?>, <?php echo htmlspecialchars($userName); ?>!
+            <?php echo htmlspecialchars($displayName); ?>
             </h1>
             <p class="text-blue-100 mt-1">
                 Welcome to Child Immunization System. Here's what's happening today.

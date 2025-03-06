@@ -104,8 +104,16 @@ $nurses = $conn->query("SELECT * FROM users WHERE role = 'Nurse'")->fetchAll(PDO
 
             <?php if ($success): ?>
                 <div class="bg-green-500 text-white p-3 rounded-lg mb-4">
-                    <?php echo $success; ?>
+                    <?php echo htmlspecialchars($success); ?>
                 </div>
+            <?php endif; ?>
+            
+            <!-- Display SMS notification message if available -->
+            <?php if (isset($_SESSION['sms_notification'])): ?>
+                <div class="bg-<?php echo $_SESSION['sms_notification']['status'] === 'success' ? 'green' : 'red'; ?>-500 text-white p-3 rounded-lg mb-4">
+                    <?php echo htmlspecialchars($_SESSION['sms_notification']['message']); ?>
+                </div>
+                <?php unset($_SESSION['sms_notification']); ?>
             <?php endif; ?>
 
             <!-- Vaccines List -->
@@ -197,6 +205,91 @@ $nurses = $conn->query("SELECT * FROM users WHERE role = 'Nurse'")->fetchAll(PDO
                 </tbody>
             </table>
         </div>
+        <div class="bg-gray-800 p-6 rounded-lg shadow-lg max-w-4xl mx-auto mt-6">
+            <h2 class="text-2xl font-bold text-white mb-6">SMS Notifications Management</h2>
+
+            <!-- SMS Notifications Tab -->
+            <div class="mb-6">
+                <div class="bg-gray-700 p-4 rounded-lg">
+                    <h3 class="text-xl font-semibold text-white mb-4">Send Notifications</h3>
+                    
+                    <!-- Notification Options -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div class="bg-gray-800 p-4 rounded-lg">
+                            <h4 class="text-lg font-medium text-white mb-2">Upcoming Vaccination Reminders</h4>
+                            <p class="text-gray-400 mb-4">Send reminders to parents about upcoming vaccinations.</p>
+                            <form action="backend/send_sms_reminders.php" method="post">
+                                <div class="mb-4">
+                                    <label class="block text-gray-400 text-sm font-medium mb-2">Days Before Vaccination</label>
+                                    <select name="days_before" class="w-full bg-gray-700 text-white rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                        <option value="1">1 Day Before</option>
+                                        <option value="3" selected>3 Days Before</option>
+                                        <option value="7">7 Days Before</option>
+                                    </select>
+                                </div>
+                                <button type="submit" name="send_upcoming_reminders" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    Send Reminders
+                                </button>
+                            </form>
+                        </div>
+                        
+                        <div class="bg-gray-800 p-4 rounded-lg">
+                            <h4 class="text-lg font-medium text-white mb-2">Missed Vaccination Notifications</h4>
+                            <p class="text-gray-400 mb-4">Notify parents about missed vaccinations.</p>
+                            <form action="backend/send_sms_reminders.php" method="post">
+                                <div class="mb-4">
+                                    <p class="text-gray-400 text-sm">This will send notifications to parents whose children have missed their scheduled vaccinations.</p>
+                                </div>
+                                <button type="submit" name="send_missed_notifications" class="w-full bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded focus:outline-none focus:ring-2 focus:ring-red-500">
+                                    Send Missed Notifications
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                    
+                    <!-- SMS Logs -->
+                    <h3 class="text-xl font-semibold text-white mb-4">Recent SMS Logs</h3>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-700">
+                            <thead class="bg-gray-700">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Recipient</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Message</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Sent At</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-gray-800 divide-y divide-gray-700">
+                                <?php
+                                // Fetch recent SMS logs
+                                $stmt = $conn->query("
+                                    SELECT recipient, LEFT(message, 50) AS short_message, status, sent_at
+                                    FROM sms_logs
+                                    ORDER BY sent_at DESC
+                                    LIMIT 10
+                                ");
+                                $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                                
+                                if (count($logs) > 0) {
+                                    foreach ($logs as $log) {
+                                        $statusClass = $log['status'] === 'success' ? 'text-green-500' : 'text-red-500';
+                                        echo "<tr>";
+                                        echo "<td class='px-4 py-3 text-sm text-gray-300'>" . htmlspecialchars($log['recipient']) . "</td>";
+                                        echo "<td class='px-4 py-3 text-sm text-gray-300'>" . htmlspecialchars($log['short_message']) . "...</td>";
+                                        echo "<td class='px-4 py-3 text-sm {$statusClass}'>" . htmlspecialchars($log['status']) . "</td>";
+                                        echo "<td class='px-4 py-3 text-sm text-gray-300'>" . htmlspecialchars($log['sent_at']) . "</td>";
+                                        echo "</tr>";
+                                    }
+                                } else {
+                                    echo "<tr><td colspan='4' class='px-4 py-3 text-sm text-gray-400 text-center'>No SMS logs found</td></tr>";
+                                }
+                                ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Edit Vaccine Modal -->
@@ -239,6 +332,7 @@ $nurses = $conn->query("SELECT * FROM users WHERE role = 'Nurse'")->fetchAll(PDO
         </div>
     </div>
 
-    <script src="js/admin-panel.js"></script>
+    <script src="js/jquery-3.6.0.min.js"></script>
+    <script src="js/admin.js"></script>
 </body>
 </html>

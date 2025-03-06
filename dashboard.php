@@ -10,6 +10,27 @@ if (!isset($_SESSION['user'])) {
 // Include database connection
 include 'backend/db.php';
 
+// Prepare and execute a query to fetch user details from the database
+try {
+    // Use username from the database as confirmed by the user
+    $stmt = $conn->prepare("SELECT id, email, username FROM users WHERE id = ?");
+    $stmt->execute([$_SESSION['user']['id']]);
+    $userDetails = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    // Use username as the display name, fallback to email if username is not available
+    if (!empty($userDetails['username'])) {
+        $displayName = $userDetails['username'];
+    } else {
+        $displayName = $userDetails['email'];
+    }
+    
+    // Store in session for future use
+    $_SESSION['user']['display_name'] = $displayName;
+    
+} catch (PDOException $e) {
+    // In case of database error, fall back to email
+    $displayName = $_SESSION['user']['email'];
+}
 // Try to get the user's full name from the database if available
 $userName = "User"; // Default value
 if (isset($_SESSION['user']['id'])) {
@@ -48,6 +69,12 @@ if ($currentHour >= 12 && $currentHour < 18) {
     $greeting = "Good afternoon";
 } elseif ($currentHour >= 18) {
     $greeting = "Good evening";
+}
+
+// Add success message if user just logged in
+$showLoginSuccess = isset($_SESSION['login_success']) && $_SESSION['login_success'] === true;
+if ($showLoginSuccess) {
+    unset($_SESSION['login_success']); 
 }
 
 // Fetch total registered children grouped by age
@@ -142,199 +169,14 @@ foreach ($upcomingVaccines as $vaccination) {
 <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
 <!-- Add Font Awesome for icons -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<!-- Add animate.css for animations -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
 <!-- Add custom fonts -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-
-<style>
-    body {
-        font-family: 'Inter', sans-serif;
-        background-color: #111827;
-    }
-    .dashboard-card {
-        background-color: #1F2937;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-        transition: all 0.3s ease;
-    }
-    .dashboard-card:hover {
-        box-shadow: 0 8px 15px rgba(0, 0, 0, 0.3);
-        transform: translateY(-2px);
-    }
-    .dashboard-stat-card {
-        background-color: #1F2937;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-        transition: all 0.3s ease;
-    }
-    .dashboard-stat-card:hover {
-        box-shadow: 0 8px 15px rgba(0, 0, 0, 0.3);
-        transform: translateY(-3px);
-    }
-    .welcome-card {
-        background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%);
-        border-radius: 12px;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
-    }
-    .fc-theme-standard {
-        font-family: 'Inter', sans-serif;
-    }
-    .fc-theme-standard th, .fc-theme-standard td {
-        border-color: rgba(55, 65, 81, 0.5);
-    }
-    .fc-theme-standard .fc-day {
-        background-color: #1F2937;
-    }
-    .fc-theme-standard .fc-day-today {
-        background-color: rgba(59, 130, 246, 0.15);
-    }
-    .fc-theme-standard .fc-daygrid-day-number {
-        color: #E5E7EB;
-        padding: 4px;
-        font-size: 0.75rem;
-    }
-    .fc .fc-daygrid-day-top {
-        justify-content: center;
-    }
-    .progress-bar {
-        height: 8px;
-        background-color: #374151;
-        border-radius: 4px;
-        overflow: hidden;
-    }
-    .progress-value {
-        height: 100%;
-        border-radius: 4px;
-    }
-    /* Make calendar more compact */
-    .fc .fc-toolbar {
-        margin-bottom: 0.5rem;
-    }
-    .fc .fc-toolbar-title {
-        font-size: 1rem;
-        color: #E5E7EB;
-    }
-    .fc .fc-toolbar-chunk {
-        display: flex;
-        align-items: center;
-    }
-    .fc .fc-button {
-        padding: 0.25rem 0.5rem;
-        font-size: 0.75rem;
-        background-color: #374151;
-        border: 1px solid #4B5563;
-        color: #E5E7EB;
-    }
-    .fc .fc-button-primary {
-        background-color: #3b82f6;
-        border-color: #3b82f6;
-        color: white;
-    }
-    .fc .fc-scrollgrid-liquid {
-        height: auto !important;
-    }
-    .fc-daygrid-event {
-        padding: 1px !important;
-        font-size: 0.7rem !important;
-    }
-    /* Improve responsiveness */
-    @media (max-width: 1280px) {
-        .card-grid-container {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-    }
-    @media (max-width: 768px) {
-        .card-grid-container {
-            grid-template-columns: repeat(1, minmax(0, 1fr));
-        }
-    }
-    
-    /* Custom Calendar Styles to match Medica design */
-    .custom-calendar {
-        background-color: #1F2937;
-        border-radius: 12px;
-        overflow: hidden;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-    }
-    .custom-calendar-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 15px;
-        background-color: #111827;
-        border-bottom: 1px solid #374151;
-    }
-    .custom-calendar-title {
-        color: #E5E7EB;
-        font-weight: 600;
-        font-size: 1rem;
-    }
-    .custom-calendar-nav {
-        display: flex;
-        gap: 10px;
-    }
-    .custom-calendar-btn {
-        background-color: #374151;
-        border: 1px solid #4B5563;
-        color: #9CA3AF;
-        width: 28px;
-        height: 28px;
-        border-radius: 6px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-    .custom-calendar-btn:hover {
-        background-color: #4B5563;
-        color: #E5E7EB;
-    }
-    .custom-calendar-days {
-        display: grid;
-        grid-template-columns: repeat(7, 1fr);
-        padding: 10px;
-        gap: 8px;
-    }
-    .custom-calendar-weekday {
-        color: #9CA3AF;
-        font-size: 0.7rem;
-        text-align: center;
-        font-weight: 500;
-        text-transform: uppercase;
-        padding: 5px 0;
-    }
-    .custom-calendar-day {
-        aspect-ratio: 1/1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 6px;
-        position: relative;
-        cursor: pointer;
-        font-size: 0.85rem;
-        color: #E5E7EB;
-        transition: all 0.2s;
-    }
-    .custom-calendar-day:hover {
-        background-color: #374151;
-    }
-    .custom-calendar-day.other-month {
-        color: #6B7280;
-    }
-    .custom-calendar-day.today {
-        background-color: rgba(59, 130, 246, 0.2);
-        font-weight: 600;
-        color: #3B82F6;
-    }
-    .custom-calendar-day.has-events {
-        font-weight: 600;
-    }
-    .custom-calendar-day.has-events::after {
-        content: '';
-    }
-</style>
+<!-- Add dashboard styles -->
+<link rel="stylesheet" href="dashboard/css/dashboard.css">
 
 <?php include 'includes/navbar.php'; ?>
 <?php include 'includes/sidebar.php'; ?>
@@ -345,6 +187,30 @@ foreach ($upcomingVaccines as $vaccination) {
         <?php include 'dashboard/dashboard_main.php'; ?>
     </div>
 </main>
+
+<!-- Success Notification -->
+<?php if ($showLoginSuccess): ?>
+<div id="loginSuccessAlert" 
+     class="fixed top-24 right-4 z-50 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg 
+            animate__animated animate__fadeInRight flex items-center space-x-2">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <span>Login successful! Welcome to the Child Immunization System.</span>
+</div>
+
+<script>
+    // Auto-hide the success message after 5 seconds
+    setTimeout(() => {
+        const alert = document.getElementById('loginSuccessAlert');
+        if (alert) {
+            alert.classList.replace('animate__fadeInRight', 'animate__fadeOutRight');
+            setTimeout(() => alert.remove(), 500);
+        }
+    }, 5000);
+</script>
+<?php endif; ?>
 
 <!-- Pass data to JavaScript -->
 <script>

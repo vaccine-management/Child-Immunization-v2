@@ -270,18 +270,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
                 
-                // Add a success message about the schedule generation
-                $success = "Child registered successfully and vaccination schedule has been created!";
-                
+                // Insert medical records if successful
+                if ($childID) {
+                    $stmt = $conn->prepare("INSERT INTO medical_records (child_id, birth_complications, allergies, previous_vaccinations) VALUES (?, ?, ?, ?)");
+                    $stmt->execute([$childID, $birthComplications, $allergies, $previousVaccinations]);
+                    
+                    // Send SMS notification with vaccination schedule
+                    require_once 'backend/sms_service.php';
+                    $smsConfig = require_once 'backend/config/sms_config.php';
+                    
+                    // Initialize SMS service
+                    $smsService = new SMSService(
+                        $smsConfig['username'],
+                        $smsConfig['api_key'],
+                        $conn
+                    );
+                    
+                    // Send registration notification
+                    $smsResult = $smsService->sendRegistrationNotification($childID);
+                    
+                    // Set success message
+                    $success = "Child registered successfully! Child ID: " . $childID;
+                    if ($smsResult['status'] === 'success') {
+                        $success .= " An SMS with the vaccination schedule has been sent to the parent.";
+                    }
+                } else {
+                    $error = "Error registering child. Please try again.";
+                }
+
+                header("Location: children.php?success=1");
+                exit();
             } catch (PDOException $e) {
                 // Log the error but don't prevent child registration if schedule generation fails
                 error_log("Failed to generate vaccination schedule: " . $e->getMessage());
                 // Still redirect with basic success message
                 $success = "Child registered successfully!";
             }
-
-            header("Location: children.php?success=1");
-            exit();
         } catch (PDOException $e) {
             $error = "Failed to register child. Please try again.";
         }

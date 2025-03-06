@@ -53,98 +53,98 @@ $userRole = strtolower($_SESSION['user']['role'] ?? 'nurse');
                 <!-- Nurse-specific menu items -->
                 <?php if ($userRole === 'nurse'): ?>
                     <!-- Children - Nurse only -->
-                    <li>
-                        <a href="children.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
-                              <?php echo ($currentPage === 'children.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
-                            <div class="w-8 h-8 flex items-center justify-center mr-3
-                                <?php echo ($currentPage === 'children.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
-                                <i class="fas fa-child"></i>
-                            </div>
-                            <span class="text-sm">Children</span>
-                            <?php if ($currentPage === 'children.php'): ?>
-                                <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
-                            <?php endif; ?>
-                        </a>
-                    </li>
+                <li>
+                    <a href="children.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
+                          <?php echo ($currentPage === 'children.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
+                        <div class="w-8 h-8 flex items-center justify-center mr-3
+                            <?php echo ($currentPage === 'children.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
+                            <i class="fas fa-child"></i>
+                        </div>
+                        <span class="text-sm">Children</span>
+                        <?php if ($currentPage === 'children.php'): ?>
+                            <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
+                        <?php endif; ?>
+                    </a>
+                </li>
 
                     <!-- Vaccination Schedule - Nurse only -->
-                    <li>
+                <li>
                         <a href="vaccination_schedule.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
                               <?php echo ($currentPage === 'vaccination_schedule.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
-                            <div class="w-8 h-8 flex items-center justify-center mr-3
+                        <div class="w-8 h-8 flex items-center justify-center mr-3
                                 <?php echo ($currentPage === 'vaccination_schedule.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
                                 <i class="fas fa-calendar-alt"></i>
-                            </div>
+                        </div>
                             <span class="text-sm">Vaccine Schedule</span>
                             <?php if ($currentPage === 'vaccination_schedule.php'): ?>
-                                <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
-                            <?php endif; ?>
-                        </a>
-                    </li>
-                <?php endif; ?>
+                            <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
+                        <?php endif; ?>
+                    </a>
+                </li>
+                        <?php endif; ?>
 
                 <!-- Admin-specific menu items -->
                 <?php if ($userRole === 'admin'): ?>
                     <!-- Inventory - Admin only -->
-                    <li>
-                        <a href="inventory.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
-                              <?php echo ($currentPage === 'inventory.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
-                            <div class="w-8 h-8 flex items-center justify-center mr-3
-                                <?php echo ($currentPage === 'inventory.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
-                                <i class="fas fa-boxes"></i>
-                            </div>
-                            <span class="text-sm">Inventory</span>
-                            <?php if ($currentPage === 'inventory.php'): ?>
-                                <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
-                            <?php endif; ?>
-                        </a>
-                    </li>
+                <li>
+                    <a href="inventory.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
+                          <?php echo ($currentPage === 'inventory.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
+                        <div class="w-8 h-8 flex items-center justify-center mr-3
+                            <?php echo ($currentPage === 'inventory.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
+                            <i class="fas fa-boxes"></i>
+                        </div>
+                        <span class="text-sm">Inventory</span>
+                        <?php if ($currentPage === 'inventory.php'): ?>
+                            <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
+                        <?php endif; ?>
+                    </a>
+                </li>
 
-                    <!-- Reports - Admin only -->
-                    <li>
-                        <a href="reports.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
-                              <?php echo ($currentPage === 'reports.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
-                            <div class="w-8 h-8 flex items-center justify-center mr-3
-                                <?php echo ($currentPage === 'reports.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
-                                <i class="fas fa-chart-bar"></i>
-                            </div>
-                            <span class="text-sm">Reports</span>
-                            <?php if ($currentPage === 'reports.php'): ?>
-                                <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
-                            <?php endif; ?>
-                        </a>
-                    </li>
+                <!-- Reports - Admin only -->
+                <li>
+                    <a href="reports.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
+                          <?php echo ($currentPage === 'reports.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
+                        <div class="w-8 h-8 flex items-center justify-center mr-3
+                            <?php echo ($currentPage === 'reports.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
+                            <i class="fas fa-chart-bar"></i>
+                        </div>
+                        <span class="text-sm">Reports</span>
+                        <?php if ($currentPage === 'reports.php'): ?>
+                            <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
+                        <?php endif; ?>
+                    </a>
+                </li>
 
-                    <!-- Users Management - Admin only -->
-                    <li>
-                        <a href="users.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
-                              <?php echo ($currentPage === 'users.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
-                            <div class="w-8 h-8 flex items-center justify-center mr-3
-                                <?php echo ($currentPage === 'users.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
-                                <i class="fas fa-users"></i>
-                            </div>
-                            <span class="text-sm">Users</span>
-                            <?php if ($currentPage === 'users.php'): ?>
-                                <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
-                            <?php endif; ?>
-                        </a>
-                    </li>
+                <!-- Users Management - Admin only -->
+                <li>
+                    <a href="users.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
+                          <?php echo ($currentPage === 'users.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
+                        <div class="w-8 h-8 flex items-center justify-center mr-3
+                            <?php echo ($currentPage === 'users.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <span class="text-sm">Users</span>
+                        <?php if ($currentPage === 'users.php'): ?>
+                            <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
+                        <?php endif; ?>
+                    </a>
+                </li>
 
-                    <!-- Settings - Admin only -->
-                    <li>
-                        <a href="settings.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
-                              <?php echo ($currentPage === 'settings.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
-                            <div class="w-8 h-8 flex items-center justify-center mr-3
-                                <?php echo ($currentPage === 'settings.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
-                                <i class="fas fa-cog"></i>
-                            </div>
-                            <span class="text-sm">Settings</span>
-                            <?php if ($currentPage === 'settings.php'): ?>
-                                <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
-                            <?php endif; ?>
-                        </a>
-                    </li>
-                <?php endif; ?>
+                <!-- Settings - Admin only -->
+                <li>
+                    <a href="settings.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
+                          <?php echo ($currentPage === 'settings.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
+                        <div class="w-8 h-8 flex items-center justify-center mr-3
+                            <?php echo ($currentPage === 'settings.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
+                            <i class="fas fa-cog"></i>
+                        </div>
+                        <span class="text-sm">Settings</span>
+                        <?php if ($currentPage === 'settings.php'): ?>
+                            <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
+                        <?php endif; ?>
+                    </a>
+                </li>
+                        <?php endif; ?>
             </ul>
         </nav>
     </div>
