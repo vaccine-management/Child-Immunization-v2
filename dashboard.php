@@ -256,6 +256,7 @@ foreach ($upcomingVaccines as $vaccination) {
         border-radius: 12px;
         overflow: hidden;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+        color: aliceblue;
     }
     .custom-calendar-header {
         display: flex;
@@ -264,6 +265,7 @@ foreach ($upcomingVaccines as $vaccination) {
         padding: 15px;
         background-color: #111827;
         border-bottom: 1px solid #374151;
+        color: #ffffff;
     }
     .custom-calendar-title {
         color: #E5E7EB;
@@ -273,6 +275,7 @@ foreach ($upcomingVaccines as $vaccination) {
     .custom-calendar-nav {
         display: flex;
         gap: 10px;
+        color: #ffffff;
     }
     .custom-calendar-btn {
         background-color: #374151;
