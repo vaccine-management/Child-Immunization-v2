@@ -270,7 +270,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
                 
-                // In the successful child registration section, after generating the schedule:
+                // Set success message
                 if ($childID) {
                     $stmt = $conn->prepare("INSERT INTO medical_records (child_id, birth_complications, allergies, previous_vaccinations) VALUES (?, ?, ?, ?)");
                     $stmt->execute([$childID, $birthComplications, $allergies, $previousVaccinations]);
@@ -294,7 +294,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($smsResult['status'] === 'success') {
                         $success .= " An SMS with the vaccination schedule has been sent to the parent.";
                     }
-                }
+                } else {
                     $error = "Error registering child. Please try again.";
                 }
 
