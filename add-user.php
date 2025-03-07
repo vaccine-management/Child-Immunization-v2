@@ -53,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <!-- Main Content -->
     <div class="ml-64 mt-16 p-6">
         <div class="bg-gray-800 p-6 rounded-lg shadow-lg max-w-4xl mx-auto">
-            <h2 class="text-2xl font-bold text-white mb-6">Add Doctor/Nurse</h2>
+            <h2 class="text-2xl font-bold text-white mb-6">Add Admin/Nurse</h2>
 
             <!-- Display error or success messages -->
             <?php if ($error): ?>
@@ -85,7 +85,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="mb-4">
                     <label for="user_role" class="block text-white mb-2">Role</label>
                     <select id="user_role" name="user_role" class="w-full px-3 py-2 bg-gray-800 text-white rounded-lg" required>
-                        <option value="Admin">Admin</option>
+
+                        <option value="Doctor">Admin</option>
+
                         <option value="Nurse">Nurse</option>
                     </select>
                 </div>

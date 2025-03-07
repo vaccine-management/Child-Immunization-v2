@@ -34,7 +34,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     try {
         setLoadingState(true);
 
-        const response = await fetch('http://localhost/immunization-system/backend/auth.php', {
+        const response = await fetch('http://localhost/backend/auth.php', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
