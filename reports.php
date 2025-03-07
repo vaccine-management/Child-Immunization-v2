@@ -344,4 +344,3 @@ function generateReport(type) {
 }
 </script>
 
-<?php include 'includes/footer.php'; ?> 
