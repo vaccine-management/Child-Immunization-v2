@@ -96,9 +96,9 @@ $inventory_items = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                     <td class="px-4 py-3 text-sm text-gray-300"><?php echo htmlspecialchars($item['expiry_date']); ?></td>
                                     <td class="px-4 py-3 text-sm">
                                         <div class="flex space-x-2">
-                                            <a href="edit_inventory.php?id=<?php echo $item['id']; ?>" class="text-blue-400 hover:text-blue-300">
+                                            <button onclick="openEditModal(<?php echo $item['id']; ?>)" class="text-blue-400 hover:text-blue-300">
                                                 <i class="fas fa-edit"></i>
-                                            </a>
+                                            </button>
                                             <button onclick="openModal('deleteModal', <?php echo $item['id']; ?>)" class="text-red-400 hover:text-red-300">
                                                 <i class="fas fa-trash"></i>
                                             </button>
@@ -169,6 +169,23 @@ $inventory_items = $stmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 
+    <!-- Edit Inventory Modal -->
+    <div id="editModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center">
+        <div class="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 class="text-xl font-bold text-white mb-4">Edit Item</h3>
+            <div id="editModalContent">
+                <!-- Loading animation -->
+                <div class="animate-pulse">
+                    <div class="h-4 bg-gray-700 rounded w-3/4 mb-6"></div>
+                    <div class="h-8 bg-gray-700 rounded mb-4"></div>
+                    <div class="h-8 bg-gray-700 rounded mb-4"></div>
+                    <div class="h-8 bg-gray-700 rounded mb-4"></div>
+                    <div class="h-8 bg-gray-700 rounded mb-4"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         function openModal(modalId, id = null) {
             if (modalId === 'deleteModal') {
@@ -181,6 +198,117 @@ $inventory_items = $stmt->fetchAll(PDO::FETCH_ASSOC);
         function closeModal(modalId) {
             document.getElementById(modalId).classList.add('hidden');
             document.getElementById(modalId).classList.remove('flex');
+        }
+        
+        function openEditModal(id) {
+            // Show the modal with loading animation
+            document.getElementById('editModal').classList.remove('hidden');
+            document.getElementById('editModal').classList.add('flex');
+            
+            // Fetch item data via AJAX
+            fetch(`get_inventory_item.php?id=${id}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        document.getElementById('editModalContent').innerHTML = `
+                            <div class="bg-red-500 text-white p-3 rounded-lg mb-4">
+                                ${data.error}
+                            </div>`;
+                        return;
+                    }
+                    
+                    // Format the date for the date input field
+                    const formattedDate = data.expiry_date;
+                    
+                    // Populate the modal with a form
+                    document.getElementById('editModalContent').innerHTML = `
+                        <form id="editItemForm">
+                            <input type="hidden" name="id" value="${data.id}">
+                            <div class="mb-4">
+                                <label for="edit_name" class="block text-gray-300 mb-2">Name</label>
+                                <input type="text" id="edit_name" name="name" value="${data.name}" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
+                            </div>
+                            <div class="mb-4">
+                                <label for="edit_batch_number" class="block text-gray-300 mb-2">Batch Number</label>
+                                <input type="text" id="edit_batch_number" name="batch_number" value="${data.batch_number}" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
+                            </div>
+                            <div class="mb-4">
+                                <label for="edit_quantity" class="block text-gray-300 mb-2">Quantity</label>
+                                <input type="number" id="edit_quantity" name="quantity" value="${data.quantity}" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
+                            </div>
+                            <div class="mb-4">
+                                <label for="edit_expiry_date" class="block text-gray-300 mb-2">Expiry Date</label>
+                                <input type="date" id="edit_expiry_date" name="expiry_date" value="${formattedDate}" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
+                            </div>
+                            <div class="flex justify-end space-x-4">
+                                <button type="button" onclick="closeModal('editModal')" class="px-4 py-2 text-gray-300 hover:text-white">
+                                    Cancel
+                                </button>
+                                <button type="button" onclick="updateItem()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                                    Update
+                                </button>
+                            </div>
+                        </form>
+                    `;
+                })
+                .catch(error => {
+                    document.getElementById('editModalContent').innerHTML = `
+                        <div class="bg-red-500 text-white p-3 rounded-lg mb-4">
+                            An error occurred while loading data
+                        </div>`;
+                });
+        }
+
+        function updateItem() {
+            const form = document.getElementById('editItemForm');
+            const formData = new FormData(form);
+            
+            // Send AJAX request to update item
+            fetch('update_inventory_item.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Display success message
+                    document.getElementById('editModalContent').innerHTML = `
+                        <div class="bg-green-500 text-white p-3 rounded-lg mb-4">
+                            ${data.success}
+                        </div>
+                        <div class="text-center mt-4">
+                            <button type="button" onclick="location.reload()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                                Refresh Page
+                            </button>
+                        </div>
+                    `;
+                    
+                    // Auto-refresh after 2 seconds
+                    setTimeout(() => {
+                        location.reload();
+                    }, 2000);
+                } else {
+                    // Display error message
+                    document.getElementById('editModalContent').innerHTML = `
+                        <div class="bg-red-500 text-white p-3 rounded-lg mb-4">
+                            ${data.error || 'An error occurred'}
+                        </div>
+                        <button type="button" onclick="closeModal('editModal')" class="w-full px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 mt-4">
+                            Close
+                        </button>
+                    `;
+                }
+            })
+            .catch(error => {
+                document.getElementById('editModalContent').innerHTML = `
+                    <div class="bg-red-500 text-white p-3 rounded-lg mb-4">
+                        An error occurred during the update
+                    </div>
+                    <button type="button" onclick="closeModal('editModal')" class="w-full px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 mt-4">
+                        Close
+                    </button>
+                `;
+            });
         }
 
         // Close modal when clicking outside
