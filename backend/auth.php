@@ -28,7 +28,8 @@ try {
     // Debug user data from database
     error_log("Database returned user data: " . print_r($user, true));
 
-    if ($user && $user['password'] === $password) { // Plain text password comparison
+    // Verify the hashed password
+    if ($user && password_verify($password, $user['password'])) {
         error_log("User authenticated successfully");
         session_start();
         

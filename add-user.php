@@ -48,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body class="bg-gray-900">
     <?php include 'includes/header.php'; ?>
     <?php include 'includes/sidebar.php'; ?>
-    <?php include  'includes/navbar.php'; ?>
+    <?php include 'includes/navbar.php'; ?>
 
     <!-- Main Content -->
     <div class="ml-64 mt-16 p-6">
@@ -85,7 +85,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="mb-4">
                     <label for="user_role" class="block text-white mb-2">Role</label>
                     <select id="user_role" name="user_role" class="w-full px-3 py-2 bg-gray-800 text-white rounded-lg" required>
+
                         <option value="Doctor">Admin</option>
+
                         <option value="Nurse">Nurse</option>
                     </select>
                 </div>
