@@ -128,6 +128,10 @@ $userRole = strtolower($_SESSION['user']['role'] ?? 'nurse');
                             <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
                         <?php endif; ?>
                     </a>
+                    <a href="sms_dashboard.php" class="flex items-center px-6 py-3 hover:bg-gray-700 transition-colors <?php echo strpos($_SERVER['PHP_SELF'], 'sms_dashboard.php') !== false ? 'bg-blue-600 border-l-4 border-blue-400' : ''; ?>">
+    <i class="fas fa-sms mr-3 text-lg"></i>
+    <span>SMS Management</span>
+</a>
                 </li>
 
                 <!-- Settings - Admin only -->

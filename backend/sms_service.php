@@ -92,14 +92,20 @@ class SMSService {
      * @param string $recipient Phone number
      * @param string $message SMS content
      * @param string $response API response
+     * @param string $messageType Type of message (registration, reminder, missed, rescheduled)
+     * @param int $vaccinationId Optional vaccination ID
+     * @param int $childId Optional child ID
      */
-    private function logSMS($recipient, $message, $response) {
+    private function logSMS($recipient, $message, $response, $messageType = 'reminder', $vaccinationId = null, $childId = null) {
         try {
             $stmt = $this->conn->prepare("
-                INSERT INTO sms_logs (recipient, message, response, sent_at)
-                VALUES (?, ?, ?, NOW())
+                INSERT INTO sms_logs (
+                    recipient, message, response, sent_at, message_type, vaccination_id, child_id
+                ) VALUES (
+                    ?, ?, ?, NOW(), ?, ?, ?
+                )
             ");
-            $stmt->execute([$recipient, $message, $response]);
+            $stmt->execute([$recipient, $message, $response, $messageType, $vaccinationId, $childId]);
         } catch (PDOException $e) {
             // Log error
             error_log("SMS Log Error: " . $e->getMessage());
