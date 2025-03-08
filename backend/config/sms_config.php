@@ -1,7 +1,14 @@
 <?php
-// Configuration for Africa's Talking API
 return [
-    'username' => 'immunization',
-    'api_key' => 'atsk_42936df7eb4919e7c62e64ecf38c33c6859a9182d7c332a8896aabdd14e8948c901d295b',   
+    // Your Africa's Talking Username
+    // For sandbox testing, this MUST be 'sandbox'
+    'username' => 'immunizations',
+    
+    // Your Africa's Talking API Key from the Dashboard
+    // Make sure this is your sandbox API key if using sandbox mode
+    'api_key' => 'atsk_3b1ae0961fc871c2880243a26ed6094bf5488cd413052141ab8dee05619b721e2e40ef19',
+    
+    // Set to 'sandbox' for testing, 'production' for live
+    'environment' => 'production'
 ];
 ?> 

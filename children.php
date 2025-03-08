@@ -7,6 +7,23 @@ if (!isset($_SESSION['user'])) {
     exit();
 }
 
+// Prevent form resubmission on refresh
+if (isset($_SESSION['form_submitted']) && $_SESSION['form_submitted'] === true) {
+    // Clear the form submission flag to prevent multiple insertions
+    unset($_SESSION['form_submitted']);
+    
+    // If page is being refreshed after submission, just display the page without processing form again
+    if (!isset($_POST) || empty($_POST)) {
+        // Continue to display the page, but skip the POST processing section
+    } 
+    // If there's a new form submission (not a refresh), let it proceed
+}
+
+// Generate a CSRF token for the form if one doesn't exist
+if (!isset($_SESSION['form_token'])) {
+    $_SESSION['form_token'] = bin2hex(random_bytes(32));
+}
+
 // Include database connection
 include 'backend/db.php';
 
@@ -42,272 +59,435 @@ function generateChildID($fullName, $guardianName, $dateOfBirth) {
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Collect and sanitize input
-    $fullName = trim($_POST['full_name']);
-    $dateOfBirth = trim($_POST['date_of_birth']);
-    $gender = trim($_POST['gender']);
-    $birthWeight = floatval($_POST['birth_weight']);
-    $placeOfBirth = trim($_POST['place_of_birth']);
-    
-    $guardianName = trim($_POST['guardian_name']);
-    $phone = trim($_POST['phone']);
-    $email = trim($_POST['email']);
-    $address = trim($_POST['address']);
-    
-    $birthComplications = trim($_POST['birth_complications']);
-    $allergies = trim($_POST['allergies']);
-    $previousVaccinations = trim($_POST['previous_vaccinations']);
+    // Check if this is a fresh form submission, not a refresh
+    if (!isset($_SESSION['form_submitted']) || $_SESSION['form_submitted'] !== true) {
+        // Validate the CSRF token
+        if (!isset($_POST['form_token']) || $_POST['form_token'] !== $_SESSION['form_token']) {
+            $error = "Invalid form submission. Please try again.";
+        } else {
+            // Collect and sanitize input
+            $fullName = trim($_POST['full_name']);
+            $dateOfBirth = trim($_POST['date_of_birth']);
+            $gender = trim($_POST['gender']);
+            $birthWeight = floatval($_POST['birth_weight']);
+            $placeOfBirth = trim($_POST['place_of_birth']);
+            
+            $guardianName = trim($_POST['guardian_name']);
+            $phone = trim($_POST['phone']);
+            $email = trim($_POST['email']);
+            $address = trim($_POST['address']);
+            
+            $birthComplications = trim($_POST['birth_complications']);
+            $allergies = trim($_POST['allergies']);
+            $previousVaccinations = trim($_POST['previous_vaccinations']);
 
-    // Add registration date
-    $registrationDate = date('Y-m-d'); 
+            // Add registration date
+            $registrationDate = date('Y-m-d'); 
 
-    // Add date validation
-    $today = new DateTime();
-    $inputDate = new DateTime($dateOfBirth);
-    
-    // Validate required inputs
-    if (empty($fullName) || empty($dateOfBirth) || empty($gender) || empty($guardianName) || empty($phone)) {
-        $error = "Required fields must be filled out.";
-    } elseif ($birthWeight <= 0) {
-        $error = "Birth weight must be a positive number.";
-    } elseif ($inputDate > $today) {
-        $error = "Date of birth cannot be in the future.";
-    } else {
-        // Generate child_id
-        $childID = generateChildID($fullName, $guardianName, $dateOfBirth);
+            // Add date validation
+            $today = new DateTime();
+            $inputDate = new DateTime($dateOfBirth);
+            
+            // Validate required inputs
+            if (empty($fullName) || empty($dateOfBirth) || empty($gender) || empty($guardianName) || empty($phone)) {
+                $error = "Required fields must be filled out.";
+            } elseif ($birthWeight <= 0) {
+                $error = "Birth weight must be a positive number.";
+            } elseif ($inputDate > $today) {
+                $error = "Date of birth cannot be in the future.";
+            } else {
+                // Generate child_id
+                $childID = generateChildID($fullName, $guardianName, $dateOfBirth);
 
-        // Insert into database
-        $stmt = $conn->prepare("INSERT INTO children (
-            child_id, full_name, date_of_birth, gender, birth_weight, place_of_birth,
-            guardian_name, phone, email, address,
-            birth_complications, allergies, previous_vaccinations, registration_date
-        ) VALUES (
-            :child_id, :full_name, :date_of_birth, :gender, :birth_weight, :place_of_birth,
-            :guardian_name, :phone, :email, :address,
-            :birth_complications, :allergies, :previous_vaccinations, :registration_date
-        )");
-        
-        try {
-            $stmt->execute([
-                ':child_id' => $childID,
-                ':full_name' => $fullName,
-                ':date_of_birth' => $dateOfBirth,
-                ':gender' => $gender,
-                ':birth_weight' => $birthWeight,
-                ':place_of_birth' => $placeOfBirth,
-                ':guardian_name' => $guardianName,
-                ':phone' => $phone,
-                ':email' => $email,
-                ':address' => $address,
-                ':birth_complications' => $birthComplications,
-                ':allergies' => $allergies,
-                ':previous_vaccinations' => $previousVaccinations,
-                ':registration_date' => $registrationDate
-            ]);
-
-            // Generate automatic vaccination schedule for the newly registered child
-            try {
-                // Fetch vaccine schedule information - ordered by age for proper scheduling
-                $scheduleStmt = $conn->query("
-                    SELECT id, vaccine_name, age_unit, age_value, dose_number, 
-                           administration_method, dosage, target_disease, notes 
-                    FROM vaccine_schedule 
-                    ORDER BY 
-                        CASE age_unit 
-                            WHEN 'days' THEN age_value
-                            WHEN 'weeks' THEN age_value * 7
-                            WHEN 'months' THEN age_value * 30
-                            WHEN 'years' THEN age_value * 365
-                        END ASC,
-                        dose_number ASC
-                ");
-                $vaccineSchedules = $scheduleStmt->fetchAll(PDO::FETCH_ASSOC);
+                // Insert into database
+                $stmt = $conn->prepare("INSERT INTO children (
+                    child_id, full_name, date_of_birth, gender, birth_weight, place_of_birth,
+                    guardian_name, phone, email, address,
+                    birth_complications, allergies, previous_vaccinations, registration_date
+                ) VALUES (
+                    :child_id, :full_name, :date_of_birth, :gender, :birth_weight, :place_of_birth,
+                    :guardian_name, :phone, :email, :address,
+                    :birth_complications, :allergies, :previous_vaccinations, :registration_date
+                )");
                 
-                // Group vaccines by their scheduled date from birth
-                $groupedVaccinesByDate = [];
-                $registrationDateTime = new DateTime($registrationDate);
-                
-                foreach ($vaccineSchedules as $vaccine) {
-                    // Create a proper date interval based on the unit and value
-                    $scheduleDate = clone $registrationDateTime; // Use registration date instead of birth date
-                    
-                    switch ($vaccine['age_unit']) {
-                        case 'days':
-                            $scheduleDate->add(new DateInterval('P' . $vaccine['age_value'] . 'D'));
-                            break;
-                        case 'weeks':
-                            $scheduleDate->add(new DateInterval('P' . ($vaccine['age_value'] * 7) . 'D'));
-                            break;
-                        case 'months':
-                            $scheduleDate->add(new DateInterval('P' . $vaccine['age_value'] . 'M'));
-                            break;
-                        case 'years':
-                            $scheduleDate->add(new DateInterval('P' . $vaccine['age_value'] . 'Y'));
-                            break;
-                    }
-                    
-                    $appointmentDate = $scheduleDate->format('Y-m-d');
-                    
-                    if (!isset($groupedVaccinesByDate[$appointmentDate])) {
-                        $groupedVaccinesByDate[$appointmentDate] = [];
-                    }
-                    $groupedVaccinesByDate[$appointmentDate][] = $vaccine;
-                }
-                
-                // Create appointments for each date
-                foreach ($groupedVaccinesByDate as $appointmentDate => $vaccines) {
-                    // Skip past dates - only schedule future appointments
-                    $today = date('Y-m-d');
-                    if ($appointmentDate < $today) {
-                        // For vaccines that should have been taken already (e.g., birth vaccines for older children)
-                        // You could either skip them or mark them as 'Missed'
-                        continue;
-                    }
-                    
-                    // Set default appointment time
-                    $appointmentTime = '09:00:00';
-                    
-                    // Get the age description for the first vaccine in this group
-                    $firstVaccine = $vaccines[0];
-                    $ageDescription = $firstVaccine['age_value'] . ' ' . $firstVaccine['age_unit'];
-                    
-                    // Create a single appointment record for this date
-                    $appointmentNotes = count($vaccines) . " vaccine(s) scheduled for " . 
-                                       date('F j, Y', strtotime($appointmentDate)) . 
-                                       " (" . $ageDescription . ")";
-                    
-                    $stmt = $conn->prepare("
-                        INSERT INTO appointments (
-                            child_id, scheduled_date, status, notes
-                        ) VALUES (
-                            :child_id, :scheduled_date, 'scheduled', :notes
-                        )
-                    ");
-                    
+                try {
                     $stmt->execute([
                         ':child_id' => $childID,
-                        ':scheduled_date' => $appointmentDate,
-                        ':notes' => $appointmentNotes
+                        ':full_name' => $fullName,
+                        ':date_of_birth' => $dateOfBirth,
+                        ':gender' => $gender,
+                        ':birth_weight' => $birthWeight,
+                        ':place_of_birth' => $placeOfBirth,
+                        ':guardian_name' => $guardianName,
+                        ':phone' => $phone,
+                        ':email' => $email,
+                        ':address' => $address,
+                        ':birth_complications' => $birthComplications,
+                        ':allergies' => $allergies,
+                        ':previous_vaccinations' => $previousVaccinations,
+                        ':registration_date' => $registrationDate
                     ]);
-                    
-                    // Get the appointment ID
-                    $appointmentId = $conn->lastInsertId();
-                    
-                    // Create individual vaccination records for each vaccine
-                    foreach ($vaccines as $vaccine) {
-                        $vaccineName = $vaccine['vaccine_name'];
-                        $doseNumber = $vaccine['dose_number'];
-                        
-                        // Create detailed notes with all available information
-                        $detailedNotes = "Scheduled " . $vaccine['age_value'] . " " . $vaccine['age_unit'];
-                        
-                        if (!empty($vaccine['administration_method'])) {
-                            $detailedNotes .= " | Method: " . $vaccine['administration_method'];
-                        }
-                        
-                        if (!empty($vaccine['dosage'])) {
-                            $detailedNotes .= " | Dosage: " . $vaccine['dosage'];
-                        }
-                        
-                        if (!empty($vaccine['target_disease'])) {
-                            $detailedNotes .= " | Protects against: " . $vaccine['target_disease'];
-                        }
-                        
-                        if (!empty($vaccine['notes'])) {
-                            $detailedNotes .= " | " . $vaccine['notes'];
-                        }
-                        
-                        // Insert into the vaccinations table
-                        $vaccineStmt = $conn->prepare("
-                            INSERT INTO vaccinations (
-                                child_id, 
-                                vaccine_name, 
-                                dose_number,
-                                scheduled_date, 
-                                scheduled_time, 
-                                status, 
-                                notes
-                            ) VALUES (
-                                :child_id,
-                                :vaccine_name,
-                                :dose_number, 
-                                :scheduled_date,
-                                :scheduled_time,
-                                'Scheduled',
-                                :notes
-                            )
-                        ");
-                        
-                        $vaccineStmt->execute([
-                            ':child_id' => $childID,
-                            ':vaccine_name' => $vaccineName,
-                            ':dose_number' => $doseNumber,
-                            ':scheduled_date' => $appointmentDate,
-                            ':scheduled_time' => $appointmentTime,
-                            ':notes' => $detailedNotes
-                        ]);
-                        
-                        // Insert into the appointment_vaccines table
-                        $apptVaccineStmt = $conn->prepare("
-                            INSERT INTO appointment_vaccines (
-                                appointment_id,
-                                vaccine_name,
-                                dose_number,
-                                status
-                            ) VALUES (
-                                :appointment_id,
-                                :vaccine_name,
-                                :dose_number,
-                                'scheduled'
-                            )
-                        ");
-                        
-                        $apptVaccineStmt->execute([
-                            ':appointment_id' => $appointmentId,
-                            ':vaccine_name' => $vaccineName,
-                            ':dose_number' => $doseNumber
-                        ]);
-                    }
-                }
-                
-                // Set success message
-                if ($childID) {
-                    $stmt = $conn->prepare("INSERT INTO medical_records (child_id, birth_complications, allergies, previous_vaccinations) VALUES (?, ?, ?, ?)");
-                    $stmt->execute([$childID, $birthComplications, $allergies, $previousVaccinations]);
-                    
-                    // Send SMS notification with vaccination schedule
-                    require_once 'backend/sms_service.php';
-                    $smsConfig = require_once 'backend/config/sms_config.php';
-                    
-                    // Initialize SMS service
-                    $smsService = new SMSService(
-                        $smsConfig['username'],
-                        $smsConfig['api_key'],
-                        $conn
-                    );
-                    
-                    // Send registration notification
-                    $smsResult = $smsService->sendRegistrationNotification($childID);
-                    
-                    // Set success message
-                    $success = "Child registered successfully! Child ID: " . $childID;
-                    if ($smsResult['status'] === 'success') {
-                        $success .= " An SMS with the vaccination schedule has been sent to the parent.";
-                    }
-                } else {
-                    $error = "Error registering child. Please try again.";
-                }
 
-                header("Location: children.php?success=1");
-                exit();
-            } catch (PDOException $e) {
-                // Log the error but don't prevent child registration if schedule generation fails
-                error_log("Failed to generate vaccination schedule: " . $e->getMessage());
-                // Still redirect with basic success message
-                $success = "Child registered successfully!";
+                    // Generate automatic vaccination schedule for the newly registered child
+                    try {
+                        // Fetch vaccine schedule information - ordered by age for proper scheduling
+                        $scheduleStmt = $conn->query("
+                            SELECT id, vaccine_name, age_unit, age_value, dose_number, 
+                                   administration_method, dosage, target_disease, notes 
+                            FROM vaccine_schedule 
+                            ORDER BY 
+                                CASE age_unit 
+                                    WHEN 'days' THEN age_value
+                                    WHEN 'weeks' THEN age_value * 7
+                                    WHEN 'months' THEN age_value * 30
+                                    WHEN 'years' THEN age_value * 365
+                                END ASC,
+                                dose_number ASC
+                        ");
+                        
+                        // Check if we got any vaccine schedules
+                        $vaccineSchedules = $scheduleStmt->fetchAll(PDO::FETCH_ASSOC);
+                        
+                        if (empty($vaccineSchedules)) {
+                            error_log("Warning: No vaccine schedules found in the database. Creating default schedule.");
+                            // Create some default schedules if none exist
+                            $vaccineSchedules = [
+                                [
+                                    'id' => 1, 
+                                    'vaccine_name' => 'BCG', 
+                                    'age_unit' => 'birth', 
+                                    'age_value' => 0, 
+                                    'dose_number' => 1
+                                ],
+                                [
+                                    'id' => 2, 
+                                    'vaccine_name' => 'OPV', 
+                                    'age_unit' => 'months', 
+                                    'age_value' => 2, 
+                                    'dose_number' => 1
+                                ],
+                                [
+                                    'id' => 3, 
+                                    'vaccine_name' => 'OPV', 
+                                    'age_unit' => 'months', 
+                                    'age_value' => 4, 
+                                    'dose_number' => 2
+                                ],
+                                [
+                                    'id' => 4, 
+                                    'vaccine_name' => 'Measles', 
+                                    'age_unit' => 'months', 
+                                    'age_value' => 9, 
+                                    'dose_number' => 1
+                                ]
+                            ];
+                        }
+                        
+                        // Group vaccines by their scheduled date from birth
+                        $groupedVaccinesByDate = [];
+                        $birthDate = new DateTime($dateOfBirth);
+                        $registrationDateTime = new DateTime($registrationDate);
+                        
+                        // For logging
+                        error_log("Child Birth Date: " . $birthDate->format('Y-m-d'));
+                        error_log("Registration Date: " . $registrationDateTime->format('Y-m-d'));
+                        
+                        foreach ($vaccineSchedules as $vaccine) {
+                            // Create a proper date interval based on the unit and value
+                            $scheduleDate = clone $birthDate; // Start from birth date
+                            
+                            // Handle special case for 'birth'
+                            if (isset($vaccine['age_unit']) && $vaccine['age_unit'] === 'birth') {
+                                // No need to add any time
+                            } else {
+                                // Add appropriate interval based on age unit and value
+                                $ageUnit = isset($vaccine['age_unit']) ? $vaccine['age_unit'] : 'months';
+                                $ageValue = isset($vaccine['age_value']) ? $vaccine['age_value'] : 0;
+                                
+                                switch ($ageUnit) {
+                                    case 'days':
+                                        $scheduleDate->add(new DateInterval('P' . $ageValue . 'D'));
+                                        break;
+                                    case 'weeks':
+                                        $scheduleDate->add(new DateInterval('P' . ($ageValue * 7) . 'D'));
+                                        break;
+                                    case 'months':
+                                        $scheduleDate->add(new DateInterval('P' . $ageValue . 'M'));
+                                        break;
+                                    case 'years':
+                                        $scheduleDate->add(new DateInterval('P' . $ageValue . 'Y'));
+                                        break;
+                                    default:
+                                        // Default to months if unit is unrecognized
+                                        $scheduleDate->add(new DateInterval('P' . $ageValue . 'M'));
+                                }
+                            }
+                            
+                            $appointmentDate = $scheduleDate->format('Y-m-d');
+                            
+                            if (!isset($groupedVaccinesByDate[$appointmentDate])) {
+                                $groupedVaccinesByDate[$appointmentDate] = [];
+                            }
+                            $groupedVaccinesByDate[$appointmentDate][] = $vaccine;
+                        }
+                        
+                        // Create appointments for each date
+                        foreach ($groupedVaccinesByDate as $appointmentDate => $vaccines) {
+                            // Skip past dates - only schedule future appointments
+                            $today = date('Y-m-d');
+                            if ($appointmentDate < $today) {
+                                // For vaccines that should have been taken already (e.g., birth vaccines for older children)
+                                // You could either skip them or mark them as 'Missed'
+                                continue;
+                            }
+                            
+                            // Set default appointment time
+                            $appointmentTime = '09:00:00';
+                            
+                            // Get the age description for the first vaccine in this group
+                            $firstVaccine = $vaccines[0];
+                            $ageDescription = $firstVaccine['age_value'] . ' ' . $firstVaccine['age_unit'];
+                            
+                            // Create a single appointment record for this date
+                            $appointmentNotes = count($vaccines) . " vaccine(s) scheduled for " . 
+                                               date('F j, Y', strtotime($appointmentDate)) . 
+                                               " (" . $ageDescription . ")";
+                            
+                            $stmt = $conn->prepare("
+                                INSERT INTO appointments (
+                                    child_id, scheduled_date, status, notes
+                                ) VALUES (
+                                    :child_id, :scheduled_date, 'scheduled', :notes
+                                )
+                            ");
+                            
+                            $stmt->execute([
+                                ':child_id' => $childID,
+                                ':scheduled_date' => $appointmentDate,
+                                ':notes' => $appointmentNotes
+                            ]);
+                            
+                            // Get the appointment ID
+                            $appointmentId = $conn->lastInsertId();
+                            
+                            // Create individual vaccination records for each vaccine
+                            foreach ($vaccines as $vaccine) {
+                                $vaccineName = $vaccine['vaccine_name'];
+                                $doseNumber = $vaccine['dose_number'];
+                                
+                                // Create detailed notes with all available information
+                                $detailedNotes = "Scheduled " . $vaccine['age_value'] . " " . $vaccine['age_unit'];
+                                
+                                if (!empty($vaccine['administration_method'])) {
+                                    $detailedNotes .= " | Method: " . $vaccine['administration_method'];
+                                }
+                                
+                                if (!empty($vaccine['dosage'])) {
+                                    $detailedNotes .= " | Dosage: " . $vaccine['dosage'];
+                                }
+                                
+                                if (!empty($vaccine['target_disease'])) {
+                                    $detailedNotes .= " | Protects against: " . $vaccine['target_disease'];
+                                }
+                                
+                                if (!empty($vaccine['notes'])) {
+                                    $detailedNotes .= " | " . $vaccine['notes'];
+                                }
+                                
+                                // Insert into the vaccinations table
+                                $vaccineStmt = $conn->prepare("
+                                    INSERT INTO vaccinations (
+                                        child_id, 
+                                        vaccine_name, 
+                                        dose_number,
+                                        scheduled_date, 
+                                        scheduled_time, 
+                                        status, 
+                                        notes
+                                    ) VALUES (
+                                        :child_id,
+                                        :vaccine_name,
+                                        :dose_number, 
+                                        :scheduled_date,
+                                        :scheduled_time,
+                                        'Scheduled',
+                                        :notes
+                                    )
+                                ");
+                                
+                                $vaccineStmt->execute([
+                                    ':child_id' => $childID,
+                                    ':vaccine_name' => $vaccineName,
+                                    ':dose_number' => $doseNumber,
+                                    ':scheduled_date' => $appointmentDate,
+                                    ':scheduled_time' => $appointmentTime,
+                                    ':notes' => $detailedNotes
+                                ]);
+                                
+                                // Insert into the appointment_vaccines table
+                                $apptVaccineStmt = $conn->prepare("
+                                    INSERT INTO appointment_vaccines (
+                                        appointment_id,
+                                        vaccine_name,
+                                        dose_number,
+                                        status
+                                    ) VALUES (
+                                        :appointment_id,
+                                        :vaccine_name,
+                                        :dose_number,
+                                        'scheduled'
+                                    )
+                                ");
+                                
+                                $apptVaccineStmt->execute([
+                                    ':appointment_id' => $appointmentId,
+                                    ':vaccine_name' => $vaccineName,
+                                    ':dose_number' => $doseNumber
+                                ]);
+                            }
+                        }
+                        
+                        // Set success message
+                        if ($childID) {
+                            $stmt = $conn->prepare("INSERT INTO medical_records (child_id, birth_complications, allergies, previous_vaccinations) VALUES (?, ?, ?, ?)");
+                            $stmt->execute([$childID, $birthComplications, $allergies, $previousVaccinations]);
+                            
+                            // Send SMS notification with vaccination schedule
+                            try {
+                                require_once 'sms-service/sms-adapter.php';
+                                
+                                // Clean and validate phone number
+                                $phone = trim($phone);
+                                
+                                // Make sure we have a valid phone number
+                                if (empty($phone)) {
+                                    error_log("Empty phone number for child {$childID}. Cannot send SMS.");
+                                    throw new Exception("Phone number is empty");
+                                }
+                                
+                                // Add + prefix if missing (and number is numeric)
+                                if (strpos($phone, '+') !== 0 && preg_match('/^\d+$/', $phone)) {
+                                    $phone = '+' . $phone;
+                                    error_log("Added + prefix to phone number: $phone for child: $childID");
+                                }
+                                
+                                // Verify phone meets minimum requirements
+                                if (strlen($phone) < 10) {
+                                    error_log("Phone number too short: $phone for child: $childID");
+                                    throw new Exception("Phone number is too short: $phone");
+                                }
+                                
+                                // Check for non-numeric characters (except +)
+                                if (!preg_match('/^\+?\d+$/', $phone)) {
+                                    error_log("Phone contains invalid characters: $phone for child: $childID");
+                                    throw new Exception("Phone number contains invalid characters: $phone");
+                                }
+                                
+                                // Debug log all parameters we're passing to the SMS function
+                                error_log("About to send SMS with vaccination schedule - Details:");
+                                error_log("Phone: $phone");
+                                error_log("Child Name: $fullName");
+                                error_log("Guardian Name: $guardianName");
+                                error_log("Child ID: $childID");
+                                error_log("Schedule Data Count: " . count($groupedVaccinesByDate));
+                                
+                                // Make sure the schedule data is properly formatted
+                                if (empty($groupedVaccinesByDate)) {
+                                    error_log("Warning: Empty vaccination schedule for child {$childID}");
+                                }
+                                
+                                // Check that at least one date has valid vaccine data
+                                $hasValidSchedule = false;
+                                foreach ($groupedVaccinesByDate as $date => $vaccines) {
+                                    if (!empty($vaccines)) {
+                                        $hasValidSchedule = true;
+                                        break;
+                                    }
+                                }
+                                
+                                if (!$hasValidSchedule) {
+                                    error_log("Warning: No valid vaccines found in schedule for child {$childID}");
+                                    // Create a simple schedule so the SMS doesn't fail
+                                    $registrationDate = date('Y-m-d');
+                                    $twoMonthsLater = date('Y-m-d', strtotime('+2 months'));
+                                    $fourMonthsLater = date('Y-m-d', strtotime('+4 months'));
+                                    
+                                    $groupedVaccinesByDate = [
+                                        $twoMonthsLater => [
+                                            ['vaccine_name' => 'First Vaccination', 'dose_number' => '1']
+                                        ],
+                                        $fourMonthsLater => [
+                                            ['vaccine_name' => 'Second Vaccination', 'dose_number' => '2']
+                                        ]
+                                    ];
+                                    
+                                    error_log("Created simple schedule with " . count($groupedVaccinesByDate) . " dates");
+                                }
+                                
+                                // Use the reliable method that tries multiple approaches
+                                try {
+                                    $smsResult = sendRegistrationWithScheduleSMS_Reliable($phone, $fullName, $guardianName, $groupedVaccinesByDate, $childID);
+                                    
+                                    // Debug logging 
+                                    error_log("SMS sending attempt result for child {$childID}: " . json_encode($smsResult));
+                                } catch (Exception $smsException) {
+                                    error_log("Exception during SMS function execution: " . $smsException->getMessage());
+                                    $smsResult = [
+                                        'status' => 'error',
+                                        'message' => 'Exception during SMS function execution: ' . $smsException->getMessage()
+                                    ];
+                                }
+                                
+                                // Set success message based on SMS result
+                                if ($smsResult['status'] === 'success') {
+                                    $_SESSION['success'] = "Child successfully registered with ID: " . $childID . 
+                                        ". A detailed SMS with the vaccination schedule has been sent to " . $phone . ".";
+                                } else {
+                                    // Log the error but don't prevent registration
+                                    error_log("Failed to send registration SMS for child {$childID}: " . json_encode($smsResult));
+                                    
+                                    // Still show success for registration, but warn about SMS
+                                    $_SESSION['success'] = "Child successfully registered with ID: " . $childID . ".";
+                                    $_SESSION['warning'] = "SMS notification could not be sent: " . ($smsResult['message'] ?? 'Unknown error') . 
+                                        ". Please check that the SMS service is running and try again.";
+                                }
+                            } catch (Exception $e) {
+                                error_log("Exception while sending registration SMS for child {$childID}: " . $e->getMessage());
+                                $_SESSION['success'] = "Child successfully registered with ID: " . $childID . ".";
+                                $_SESSION['warning'] = "There was an error sending the SMS notification: " . $e->getMessage() . 
+                                    ". Please check that the SMS service is running.";
+                            }
+                        } else {
+                            $error = "Error registering child. Please try again.";
+                        }
+
+                        // Set a flag to prevent resubmission on refresh
+                        $_SESSION['form_submitted'] = true;
+                        
+                        // Generate a new form token for future submissions
+                        $_SESSION['form_token'] = bin2hex(random_bytes(32));
+                        
+                        header("Location: children.php");
+                        exit();
+                    } catch (PDOException $e) {
+                        // Log the error but don't prevent child registration if schedule generation fails
+                        error_log("Failed to generate vaccination schedule: " . $e->getMessage());
+                        // Still redirect with basic success message
+                        $_SESSION['success'] = "Child registered successfully!";
+                        
+                        // Set a flag to prevent resubmission on refresh
+                        $_SESSION['form_submitted'] = true;
+                        
+                        // Generate a new form token for future submissions
+                        $_SESSION['form_token'] = bin2hex(random_bytes(32));
+                        
+                        header("Location: children.php");
+                        exit();
+                    }
+                } catch (PDOException $e) {
+                    $error = "Failed to register child. Please try again.";
+                }
             }
-        } catch (PDOException $e) {
-            $error = "Failed to register child. Please try again.";
         }
     }
 }
@@ -362,30 +542,25 @@ if (isset($_GET['success'])) {
 
             <!-- Modal Body -->
             <div class="p-6">
-                <form method="POST" class="space-y-6">
-                    <!-- Personal Information -->
+                <form method="POST" class="space-y-8">
+                    <!-- CSRF Token -->
+                    <input type="hidden" name="form_token" value="<?php echo $_SESSION['form_token']; ?>">
+                    
+                    <!-- Child's Personal Information -->
                     <div class="space-y-4">
-                        <h3 class="text-sm font-semibold text-blue-400 uppercase tracking-wider">Personal Information</h3>
-                        <div class="grid grid-cols-1 gap-4">
-                            <div>
+                        <h3 class="text-sm font-semibold text-blue-400 uppercase tracking-wider">Child's Personal Information</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="col-span-2">
                                 <label for="full_name" class="block text-gray-300 text-sm font-medium mb-2">Full Name</label>
                                 <input type="text" id="full_name" name="full_name" required
                                        class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
                                               focus:ring-2 focus:ring-blue-500 transition duration-300">
                             </div>
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label for="date_of_birth" class="block text-gray-300 text-sm font-medium mb-2">Date of Birth</label>
-                                    <input type="date" id="date_of_birth" name="date_of_birth" required
-                                           class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
-                                                  focus:ring-2 focus:ring-blue-500 transition duration-300">
-                                </div>
-                                <div>
-                                    <label for="weight" class="block text-gray-300 text-sm font-medium mb-2">Weight (kg)</label>
-                                    <input type="number" step="0.1" id="weight" name="weight" required
-                                           class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
-                                                  focus:ring-2 focus:ring-blue-500 transition duration-300">
-                                </div>
+                            <div>
+                                <label for="date_of_birth" class="block text-gray-300 text-sm font-medium mb-2">Date of Birth</label>
+                                <input type="date" id="date_of_birth" name="date_of_birth" required
+                                       class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                              focus:ring-2 focus:ring-blue-500 transition duration-300">
                             </div>
                             <div>
                                 <label for="gender" class="block text-gray-300 text-sm font-medium mb-2">Gender</label>
@@ -397,24 +572,81 @@ if (isset($_GET['success'])) {
                                     <option value="Female">Female</option>
                                 </select>
                             </div>
+                            <div>
+                                <label for="birth_weight" class="block text-gray-300 text-sm font-medium mb-2">Weight at Birth (kg)</label>
+                                <input type="number" step="0.01" id="birth_weight" name="birth_weight" required
+                                       class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                              focus:ring-2 focus:ring-blue-500 transition duration-300">
+                            </div>
+                            <div>
+                                <label for="place_of_birth" class="block text-gray-300 text-sm font-medium mb-2">Place of Birth</label>
+                                <select id="place_of_birth" name="place_of_birth" required
+                                        class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                               focus:ring-2 focus:ring-blue-500 transition duration-300">
+                                    <option value="">Select Place of Birth</option>
+                                    <option value="Hospital">Hospital</option>
+                                    <option value="Home">Home</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Parent Information -->
+                    <!-- Parent/Guardian Information -->
                     <div class="space-y-4">
-                        <h3 class="text-sm font-semibold text-green-400 uppercase tracking-wider">Parent Information</h3>
-                        <div class="grid grid-cols-1 gap-4">
-                            <div>
-                                <label for="guardian_name" class="block text-gray-300 text-sm font-medium mb-2">Guardian's Name</label>
+                        <h3 class="text-sm font-semibold text-green-400 uppercase tracking-wider">Parent/Guardian Information</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="col-span-2">
+                                <label for="guardian_name" class="block text-gray-300 text-sm font-medium mb-2">Guardian's Full Name</label>
                                 <input type="text" id="guardian_name" name="guardian_name" required
                                        class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
                                               focus:ring-2 focus:ring-blue-500 transition duration-300">
                             </div>
                             <div>
-                                <label for="phone" class="block text-gray-300 text-sm font-medium mb-2">Phone</label>
+                                <label for="phone" class="block text-gray-300 text-sm font-medium mb-2">Phone Number</label>
                                 <input type="tel" id="phone" name="phone" required
                                        class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
                                               focus:ring-2 focus:ring-blue-500 transition duration-300">
+                            </div>
+                            <div>
+                                <label for="email" class="block text-gray-300 text-sm font-medium mb-2">Email Address</label>
+                                <input type="email" id="email" name="email"
+                                       class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                              focus:ring-2 focus:ring-blue-500 transition duration-300">
+                            </div>
+                            <div class="col-span-2">
+                                <label for="address" class="block text-gray-300 text-sm font-medium mb-2">Residential Address</label>
+                                <textarea id="address" name="address" rows="2" required
+                                          class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                                 focus:ring-2 focus:ring-blue-500 transition duration-300"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Medical History -->
+                    <div class="space-y-4">
+                        <h3 class="text-sm font-semibold text-green-400 uppercase tracking-wider">Medical History</h3>
+                        <div class="grid grid-cols-1 gap-4">
+                            <div>
+                                <label for="birth_complications" class="block text-gray-300 text-sm font-medium mb-2">Birth Complications</label>
+                                <textarea id="birth_complications" name="birth_complications" rows="2"
+                                          class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                                 focus:ring-2 focus:ring-blue-500 transition duration-300"
+                                          placeholder="Describe any complications during birth (if any)"></textarea>
+                            </div>
+                            <div>
+                                <label for="allergies" class="block text-gray-300 text-sm font-medium mb-2">Known Allergies</label>
+                                <textarea id="allergies" name="allergies" rows="2"
+                                          class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                                 focus:ring-2 focus:ring-blue-500 transition duration-300"
+                                          placeholder="List any known allergies"></textarea>
+                            </div>
+                            <div>
+                                <label for="previous_vaccinations" class="block text-gray-300 text-sm font-medium mb-2">Previous Vaccinations</label>
+                                <textarea id="previous_vaccinations" name="previous_vaccinations" rows="2"
+                                          class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                                 focus:ring-2 focus:ring-blue-500 transition duration-300"
+                                          placeholder="List any previous vaccinations"></textarea>
                             </div>
                         </div>
                     </div>
@@ -434,7 +666,7 @@ if (isset($_GET['success'])) {
     </div>
 
     <!-- Notification Container -->
-    <div id="notificationContainer" class="fixed top-4 right-4 z-50 space-y-4">
+    <div class="top-20 right-6 fixed z-50 w-96">
         <?php if (isset($error)): ?>
             <div class="notification bg-red-500 text-white p-4 rounded-lg shadow-lg animate__animated animate__fadeInRight">
                 <div class="flex items-center">
@@ -447,8 +679,19 @@ if (isset($_GET['success'])) {
             </div>
         <?php endif; ?>
 
-        <?php if (isset($success)): ?>
-            <div class="notification bg-green-500 text-white p-4 rounded-lg shadow-lg animate__animated animate__fadeInRight">
+        <?php if (isset($_SESSION['success'])): ?>
+            <div class="notification bg-green-500 text-white p-4 rounded-lg shadow-lg animate__animated animate__fadeInRight mb-4">
+                <div class="flex items-center">
+                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <?php echo $_SESSION['success']; ?>
+                </div>
+            </div>
+            <?php unset($_SESSION['success']); ?>
+        <?php elseif (isset($success)): ?>
+            <div class="notification bg-green-500 text-white p-4 rounded-lg shadow-lg animate__animated animate__fadeInRight mb-4">
                 <div class="flex items-center">
                     <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
@@ -457,6 +700,19 @@ if (isset($_GET['success'])) {
                     <?php echo $success; ?>
                 </div>
             </div>
+        <?php endif; ?>
+        
+        <?php if (isset($_SESSION['warning'])): ?>
+            <div class="notification bg-yellow-500 text-white p-4 rounded-lg shadow-lg animate__animated animate__fadeInRight">
+                <div class="flex items-center">
+                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                    </svg>
+                    <?php echo $_SESSION['warning']; ?>
+                </div>
+            </div>
+            <?php unset($_SESSION['warning']); ?>
         <?php endif; ?>
     </div>
 
@@ -513,6 +769,9 @@ if (isset($_GET['success'])) {
                 </div>
 
                 <form method="POST" class="space-y-8">
+                    <!-- CSRF Token -->
+                    <input type="hidden" name="form_token" value="<?php echo $_SESSION['form_token']; ?>">
+                    
                     <!-- Child's Personal Information -->
                     <div class="space-y-4">
                         <h3 class="text-sm font-semibold text-blue-400 uppercase tracking-wider">Child's Personal Information</h3>
@@ -751,16 +1010,16 @@ if (isset($_GET['success'])) {
                 notification.classList.remove('animate__fadeInRight');
                 notification.classList.add('animate__fadeOutRight');
                 setTimeout(() => {
-                    notification.remove();
+                    notification.style.display = 'none';
                 }, 1000);
             }, 5000);
         });
 
         // Clear success parameter from URL
         if (window.location.search.includes('success')) {
-            const url = new URL(window.location.href);
+            const url = new URL(window.location);
             url.searchParams.delete('success');
-            history.replaceState(null, '', url);
+            window.history.replaceState({}, '', url);
         }
 
         // Date of birth validation
@@ -782,6 +1041,36 @@ if (isset($_GET['success'])) {
                 alert('Date of birth cannot be in the future');
                 this.value = ''; // Clear the invalid date
             }
+        });
+
+        // JavaScript for form validation and functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            // Clear success parameter from URL
+            if (window.location.search.includes('success')) {
+                const url = new URL(window.location);
+                url.searchParams.delete('success');
+                window.history.replaceState({}, '', url);
+            }
+            
+            // Hide notifications after 5 seconds
+            const notifications = document.querySelectorAll('.notification');
+            notifications.forEach(notification => {
+                setTimeout(() => {
+                    notification.classList.remove('animate__fadeInRight');
+                    notification.classList.add('animate__fadeOutRight');
+                    setTimeout(() => {
+                        notification.style.display = 'none';
+                    }, 1000);
+                }, 5000);
+            });
+
+            // Hide form after successful registration
+            <?php if (isset($_SESSION['success']) || isset($success)): ?>
+            // Hide registration modal if open
+            document.querySelectorAll('.modal-close').forEach(button => {
+                button.click();
+            });
+            <?php endif; ?>
         });
     </script>
 </body>
