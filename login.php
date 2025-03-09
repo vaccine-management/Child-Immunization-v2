@@ -9,19 +9,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'];
     $role = $_POST['role']; 
 
-    // Fetch user from the database with plain text password comparison
-    $stmt = $conn->prepare("SELECT id, email, password, role FROM users WHERE email = :email AND password = :password AND role = :role");
+    // Fetch user from the database - don't check password yet, only get the hashed password
+    $stmt = $conn->prepare("SELECT id, email, password, role, username FROM users WHERE email = :email AND role = :role");
     $stmt->bindParam(':email', $email);
-    $stmt->bindParam(':password', $password);
     $stmt->bindParam(':role', $role);
     $stmt->execute();
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if ($user) {
+    // Verify the password using password_verify function
+    if ($user && password_verify($password, $user['password'])) {
         // Store user data in session
         $_SESSION['user'] = [
             'id' => $user['id'],
             'email' => $user['email'],
+            'username' => $user['username'],
             'role' => $user['role']
         ];
         

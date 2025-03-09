@@ -85,9 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="mb-4">
                     <label for="user_role" class="block text-white mb-2">Role</label>
                     <select id="user_role" name="user_role" class="w-full px-3 py-2 bg-gray-800 text-white rounded-lg" required>
-
-                        <option value="Doctor">Admin</option>
-
+                        <option value="Admin">Admin</option>
                         <option value="Nurse">Nurse</option>
                     </select>
                 </div>
