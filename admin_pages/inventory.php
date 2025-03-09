@@ -1,16 +1,17 @@
 <?php
-// filepath: /C:/xampp/htdocs/Child-Immunization-v2/inventory.php
+// Define root path for includes
+define('ROOT_PATH', dirname(__FILE__) . '/../');
 
 session_start();
 
 // Include the auth check file
-include 'includes/auth_check.php';
+require_once ROOT_PATH . 'includes/auth_check.php';
 
 // Only allow admins to access this page
 checkAdminRole();
 
 // Include the database connection file
-include 'backend/db.php';
+require_once ROOT_PATH . 'backend/db.php';
 
 // Handle form submissions for CRUD operations
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -51,12 +52,12 @@ $inventory_items = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
-    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="../css/styles.css">
 </head>
 <body class="bg-gray-900">
-    <?php include 'includes/header.php'; ?>
-    <?php include 'includes/navbar.php'; ?>
-    <?php include 'includes/sidebar.php'; ?>
+    <?php require_once ROOT_PATH . 'includes/header.php'; ?>
+    <?php require_once ROOT_PATH . 'includes/navbar.php'; ?>
+    <?php require_once ROOT_PATH . 'includes/sidebar.php'; ?>
 
     <!-- Main Content -->
     <main id="main-content" class="lg:ml-64 ml-0 pt-16 min-h-screen bg-gray-900 transition-all duration-300 ease-in-out">

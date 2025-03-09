@@ -1,5 +1,7 @@
 <?php
-// filepath: /c:/xampp/htdocs/Child-Immunization-v2/get_inventory_item.php
+// Define root path for includes
+define('ROOT_PATH', dirname(__FILE__) . '/../');
+
 session_start();
 
 // Basic error reporting for debugging
@@ -13,7 +15,7 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'Admin') {
 }
 
 // Include database connection
-include 'backend/db.php';
+require_once ROOT_PATH . 'backend/db.php';
 
 // Get item details based on ID
 if (isset($_GET['id'])) {

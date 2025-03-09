@@ -1,16 +1,17 @@
 <?php
-// filepath: /C:/xampp/htdocs/Child-Immunization-v2/users.php
+// Define root path for includes
+define('ROOT_PATH', dirname(__FILE__) . '/../');
 
 session_start();
 
 // Include the auth check file
-include 'includes/auth_check.php';
+require_once ROOT_PATH . 'includes/auth_check.php';
 
 // Only allow admins to access this page
 checkAdminRole();
 
 // Include the database connection file
-include 'backend/db.php';
+require_once ROOT_PATH . 'backend/db.php';
 
 // Fetch all users from the database
 try {
@@ -32,12 +33,12 @@ try {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
-    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="../css/styles.css">
 </head>
 <body class="bg-gray-900">
-    <?php include 'includes/header.php'; ?>
-    <?php include 'includes/navbar.php'; ?>
-    <?php include 'includes/sidebar.php'; ?>
+    <?php require_once ROOT_PATH . 'includes/header.php'; ?>
+    <?php require_once ROOT_PATH . 'includes/navbar.php'; ?>
+    <?php require_once ROOT_PATH . 'includes/sidebar.php'; ?>
 
     <!-- Main Content -->
     <main id="main-content" class="lg:ml-64 ml-0 pt-16 min-h-screen bg-gray-900 transition-all duration-300 ease-in-out">
@@ -48,7 +49,7 @@ try {
                     <h1 class="text-2xl font-bold text-white">Users Management</h1>
                     <p class="text-gray-400">Manage and view all registered users</p>
                 </div>
-                <a href="add-user.php" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center">
+                <a href="../add-user.php" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center">
                     <i class="fas fa-plus mr-2"></i> Add New User
                 </a>
             </div>
@@ -81,7 +82,7 @@ try {
                                     <td class="px-4 py-3 text-sm text-gray-300"><?php echo date('M d, Y', strtotime($user['created_at'])); ?></td>
                                     <td class="px-4 py-3 text-sm">
                                         <div class="flex space-x-2">
-                                            <a href="edit_user.php?id=<?php echo $user['id']; ?>" class="text-blue-400 hover:text-blue-300">
+                                            <a href="../edit_user.php?id=<?php echo $user['id']; ?>" class="text-blue-400 hover:text-blue-300">
                                                 <i class="fas fa-edit"></i>
                                             </a>
                                             <button onclick="deleteUser(<?php echo $user['id']; ?>)" class="text-red-400 hover:text-red-300">
@@ -135,7 +136,7 @@ try {
 
         function confirmDelete() {
             if (userIdToDelete) {
-                window.location.href = `delete_user.php?id=${userIdToDelete}`;
+                window.location.href = `../delete_user.php?id=${userIdToDelete}`;
             }
         }
 
