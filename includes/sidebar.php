@@ -11,6 +11,10 @@ $userName = isset($_SESSION['user']['username']) && !empty($_SESSION['user']['us
 $profileImage = $_SESSION['user']['profile_image'] ?? null;
 $currentPage = basename($_SERVER['PHP_SELF']);
 
+// Determine if we're in admin_pages directory or root
+$isInAdminDir = strpos($_SERVER['SCRIPT_FILENAME'], 'admin_pages') !== false;
+$baseUrl = $isInAdminDir ? '../' : '';
+
 // Get user role - default to 'nurse' if not specified
 $userRole = strtolower($_SESSION['user']['role'] ?? 'nurse');
 ?>
@@ -27,7 +31,6 @@ $userRole = strtolower($_SESSION['user']['role'] ?? 'nurse');
             </div>
         </div>
 
-
         <!-- Navigation Menu -->
         <nav>
             <!-- Menu Header -->
@@ -37,7 +40,7 @@ $userRole = strtolower($_SESSION['user']['role'] ?? 'nurse');
             <ul class="space-y-2">
                 <!-- Dashboard - Both admin and nurse -->
                 <li>
-                    <a href="dashboard.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
+                    <a href="<?php echo $baseUrl; ?>dashboard.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
                           <?php echo ($currentPage === 'dashboard.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
                         <div class="w-8 h-8 flex items-center justify-center mr-3
                             <?php echo ($currentPage === 'dashboard.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
@@ -49,12 +52,10 @@ $userRole = strtolower($_SESSION['user']['role'] ?? 'nurse');
                         <?php endif; ?>
                     </a>
                 </li>
-
-                <!-- Nurse-specific menu items -->
-                <?php if ($userRole === 'nurse'): ?>
-                    <!-- Children - Nurse only -->
+                
+                <!-- Children - Both admin and nurse -->
                 <li>
-                    <a href="children.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
+                    <a href="<?php echo $baseUrl; ?>children.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
                           <?php echo ($currentPage === 'children.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
                         <div class="w-8 h-8 flex items-center justify-center mr-3
                             <?php echo ($currentPage === 'children.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
@@ -67,27 +68,26 @@ $userRole = strtolower($_SESSION['user']['role'] ?? 'nurse');
                     </a>
                 </li>
 
-                    <!-- Vaccination Schedule - Nurse only -->
+                <!-- SMS - Both admin and nurse -->
                 <li>
-                        <a href="vaccination_schedule.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
-                              <?php echo ($currentPage === 'vaccination_schedule.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
+                    <a href="<?php echo $baseUrl; ?>sms_dashboard.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
+                          <?php echo ($currentPage === 'sms_dashboard.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
                         <div class="w-8 h-8 flex items-center justify-center mr-3
-                                <?php echo ($currentPage === 'vaccination_schedule.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
-                                <i class="fas fa-calendar-alt"></i>
+                            <?php echo ($currentPage === 'sms_dashboard.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
+                            <i class="fas fa-sms"></i>
                         </div>
-                            <span class="text-sm">Vaccine Schedule</span>
-                            <?php if ($currentPage === 'vaccination_schedule.php'): ?>
+                        <span class="text-sm">SMS Notifications</span>
+                        <?php if ($currentPage === 'sms_dashboard.php'): ?>
                             <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
                         <?php endif; ?>
                     </a>
                 </li>
-                        <?php endif; ?>
 
                 <!-- Admin-specific menu items -->
                 <?php if ($userRole === 'admin'): ?>
                     <!-- Inventory - Admin only -->
                 <li>
-                    <a href="inventory.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
+                    <a href="<?php echo $baseUrl; ?>admin_pages/inventory.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
                           <?php echo ($currentPage === 'inventory.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
                         <div class="w-8 h-8 flex items-center justify-center mr-3
                             <?php echo ($currentPage === 'inventory.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
@@ -102,7 +102,7 @@ $userRole = strtolower($_SESSION['user']['role'] ?? 'nurse');
 
                 <!-- Reports - Admin only -->
                 <li>
-                    <a href="reports.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
+                    <a href="<?php echo $baseUrl; ?>admin_pages/reports.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
                           <?php echo ($currentPage === 'reports.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
                         <div class="w-8 h-8 flex items-center justify-center mr-3
                             <?php echo ($currentPage === 'reports.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
@@ -117,7 +117,7 @@ $userRole = strtolower($_SESSION['user']['role'] ?? 'nurse');
 
                 <!-- Users Management - Admin only -->
                 <li>
-                    <a href="users.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
+                    <a href="<?php echo $baseUrl; ?>admin_pages/users.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
                           <?php echo ($currentPage === 'users.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
                         <div class="w-8 h-8 flex items-center justify-center mr-3
                             <?php echo ($currentPage === 'users.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
@@ -128,27 +128,8 @@ $userRole = strtolower($_SESSION['user']['role'] ?? 'nurse');
                             <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
                         <?php endif; ?>
                     </a>
-                    <a href="sms_dashboard.php" class="flex items-center px-6 py-3 hover:bg-gray-700 transition-colors <?php echo strpos($_SERVER['PHP_SELF'], 'sms_dashboard.php') !== false ? 'bg-blue-600 border-l-4 border-blue-400' : ''; ?>">
-    <i class="fas fa-sms mr-3 text-lg"></i>
-    <span>SMS Management</span>
-</a>
                 </li>
-
-                <!-- Settings - Admin only -->
-                <li>
-                    <a href="settings.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
-                          <?php echo ($currentPage === 'settings.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
-                        <div class="w-8 h-8 flex items-center justify-center mr-3
-                            <?php echo ($currentPage === 'settings.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
-                            <i class="fas fa-cog"></i>
-                        </div>
-                        <span class="text-sm">Settings</span>
-                        <?php if ($currentPage === 'settings.php'): ?>
-                            <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
-                        <?php endif; ?>
-                    </a>
-                </li>
-                        <?php endif; ?>
+                <?php endif; ?>
             </ul>
         </nav>
     </div>

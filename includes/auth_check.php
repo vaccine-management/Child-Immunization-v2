@@ -8,7 +8,7 @@
  * 
  * Example:
  * <?php
- * include 'includes/auth_check.php';
+ * include 'includes/auth_check.php'; // or '../includes/auth_check.php' if in subdirectory
  * checkUserRole(['admin']); // Only allow admins
  * // or
  * checkUserRole(['admin', 'nurse']); // Allow both admins and nurses
@@ -20,6 +20,10 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// Detect if the script is in admin_pages directory
+$in_admin_dir = strpos($_SERVER['SCRIPT_FILENAME'], 'admin_pages') !== false;
+$base_path = $in_admin_dir ? '../' : '';
+
 /**
  * Check if the current user has one of the required roles
  * 
@@ -28,9 +32,14 @@ if (session_status() === PHP_SESSION_NONE) {
  * @return void
  */
 function checkUserRole($allowedRoles, $redirectUrl = 'login.php') {
+    global $base_path;
+    
+    // Adjust redirect URL based on directory
+    $adjusted_redirect = strpos($redirectUrl, '/') === false ? $base_path . $redirectUrl : $redirectUrl;
+    
     // Check if user is logged in
     if (!isset($_SESSION['user'])) {
-        header('Location: ' . $redirectUrl);
+        header("Location: {$adjusted_redirect}");
         exit();
     }
     
@@ -41,7 +50,7 @@ function checkUserRole($allowedRoles, $redirectUrl = 'login.php') {
     if (!in_array($userRole, array_map('strtolower', $allowedRoles))) {
         // Redirect to dashboard with access denied message
         $_SESSION['error_message'] = 'Access denied. You do not have permission to view this page.';
-        header('Location: dashboard.php');
+        header("Location: {$base_path}dashboard.php");
         exit();
     }
 }
@@ -53,7 +62,12 @@ function checkUserRole($allowedRoles, $redirectUrl = 'login.php') {
  * @return void
  */
 function checkAdminRole($redirectUrl = 'dashboard.php') {
-    checkUserRole(['admin'], $redirectUrl);
+    global $base_path;
+    
+    // Adjust redirect URL based on directory
+    $adjusted_redirect = strpos($redirectUrl, '/') === false ? $base_path . $redirectUrl : $redirectUrl;
+    
+    checkUserRole(['admin'], $adjusted_redirect);
 }
 
 /**
@@ -63,5 +77,10 @@ function checkAdminRole($redirectUrl = 'dashboard.php') {
  * @return void
  */
 function checkNurseRole($redirectUrl = 'dashboard.php') {
-    checkUserRole(['nurse'], $redirectUrl);
+    global $base_path;
+    
+    // Adjust redirect URL based on directory
+    $adjusted_redirect = strpos($redirectUrl, '/') === false ? $base_path . $redirectUrl : $redirectUrl;
+    
+    checkUserRole(['nurse'], $adjusted_redirect);
 } 

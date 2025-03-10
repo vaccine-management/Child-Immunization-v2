@@ -1,79 +1,88 @@
 <?php
+// Define root path for includes
+define('ROOT_PATH', dirname(__FILE__) . '/../');
+
 // Include the auth check file
-include 'includes/auth_check.php';
+require_once ROOT_PATH . 'includes/auth_check.php';
 
 // Only allow admins to access this page
 checkAdminRole();
 
 // Include database connection
-include 'backend/db.php';
+require_once ROOT_PATH . 'backend/db.php';
 
-// Fetch statistics for charts
-// 1. Vaccination Status Count
-$vaccineStatusQuery = "SELECT 
-    COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
-    COUNT(CASE WHEN status = 'scheduled' THEN 1 END) as scheduled,
-    COUNT(CASE WHEN status = 'missed' THEN 1 END) as missed
-FROM vaccinations";
-$vaccineStatusStmt = $conn->query($vaccineStatusQuery);
-$vaccineStatus = $vaccineStatusStmt->fetch(PDO::FETCH_ASSOC);
+try {
+    // Fetch statistics for charts
+    // 1. Vaccination Status Count
+    $vaccineStatusQuery = "SELECT 
+        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
+        COUNT(CASE WHEN status = 'scheduled' THEN 1 END) as scheduled,
+        COUNT(CASE WHEN status = 'missed' THEN 1 END) as missed
+    FROM vaccinations";
+    $vaccineStatusStmt = $conn->query($vaccineStatusQuery);
+    $vaccineStatus = $vaccineStatusStmt->fetch(PDO::FETCH_ASSOC);
 
-// Add Appointment Status Count
-$appointmentStatusQuery = "SELECT 
-    COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
-    COUNT(CASE WHEN status = 'scheduled' THEN 1 END) as scheduled,
-    COUNT(CASE WHEN status = 'missed' THEN 1 END) as missed,
-    COUNT(CASE WHEN status = 'partially_completed' THEN 1 END) as partial,
-    COUNT(CASE WHEN status = 'rescheduled' THEN 1 END) as rescheduled
-FROM appointments";
-$appointmentStatusStmt = $conn->query($appointmentStatusQuery);
-$appointmentStatus = $appointmentStatusStmt->fetch(PDO::FETCH_ASSOC);
+    // Add Appointment Status Count
+    $appointmentStatusQuery = "SELECT 
+        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
+        COUNT(CASE WHEN status = 'scheduled' THEN 1 END) as scheduled,
+        COUNT(CASE WHEN status = 'missed' THEN 1 END) as missed,
+        COUNT(CASE WHEN status = 'partially_completed' THEN 1 END) as partial,
+        COUNT(CASE WHEN status = 'rescheduled' THEN 1 END) as rescheduled
+    FROM appointments";
+    $appointmentStatusStmt = $conn->query($appointmentStatusQuery);
+    $appointmentStatus = $appointmentStatusStmt->fetch(PDO::FETCH_ASSOC);
 
-// 2. Age Distribution
-$ageDistQuery = "SELECT 
-    COUNT(CASE WHEN TIMESTAMPDIFF(YEAR, date_of_birth, CURDATE()) < 1 THEN 1 END) as under_one,
-    COUNT(CASE WHEN TIMESTAMPDIFF(YEAR, date_of_birth, CURDATE()) BETWEEN 1 AND 2 THEN 1 END) as one_to_two,
-    COUNT(CASE WHEN TIMESTAMPDIFF(YEAR, date_of_birth, CURDATE()) BETWEEN 2 AND 3 THEN 1 END) as two_to_three,
-    COUNT(CASE WHEN TIMESTAMPDIFF(YEAR, date_of_birth, CURDATE()) > 3 THEN 1 END) as above_three
-FROM children";
-$ageDistStmt = $conn->query($ageDistQuery);
-$ageDist = $ageDistStmt->fetch(PDO::FETCH_ASSOC);
+    // 2. Age Distribution
+    $ageDistQuery = "SELECT 
+        COUNT(CASE WHEN TIMESTAMPDIFF(YEAR, date_of_birth, CURDATE()) < 1 THEN 1 END) as under_one,
+        COUNT(CASE WHEN TIMESTAMPDIFF(YEAR, date_of_birth, CURDATE()) BETWEEN 1 AND 2 THEN 1 END) as one_to_two,
+        COUNT(CASE WHEN TIMESTAMPDIFF(YEAR, date_of_birth, CURDATE()) BETWEEN 2 AND 3 THEN 1 END) as two_to_three,
+        COUNT(CASE WHEN TIMESTAMPDIFF(YEAR, date_of_birth, CURDATE()) > 3 THEN 1 END) as above_three
+    FROM children";
+    $ageDistStmt = $conn->query($ageDistQuery);
+    $ageDist = $ageDistStmt->fetch(PDO::FETCH_ASSOC);
 
-// 3. Monthly Appointments and Vaccinations (Last 6 months)
-$monthlyStatsQuery = "SELECT 
-    DATE_FORMAT(a.scheduled_date, '%b') as month,
-    COUNT(DISTINCT a.id) as appointment_count,
-    COUNT(DISTINCT CASE WHEN a.status = 'completed' THEN a.id END) as vaccination_count
-FROM appointments a
-WHERE a.scheduled_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-GROUP BY MONTH(a.scheduled_date), DATE_FORMAT(a.scheduled_date, '%b')
-ORDER BY a.scheduled_date DESC
-LIMIT 6";
-$monthlyStatsStmt = $conn->query($monthlyStatsQuery);
-$monthlyStats = $monthlyStatsStmt->fetchAll(PDO::FETCH_ASSOC);
+    // 3. Monthly Appointments and Vaccinations (Last 6 months)
+    $monthlyStatsQuery = "SELECT 
+        DATE_FORMAT(a.scheduled_date, '%b') as month,
+        COUNT(DISTINCT a.id) as appointment_count,
+        COUNT(DISTINCT CASE WHEN a.status = 'completed' THEN a.id END) as vaccination_count
+    FROM appointments a
+    WHERE a.scheduled_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+    GROUP BY MONTH(a.scheduled_date), DATE_FORMAT(a.scheduled_date, '%b')
+    ORDER BY a.scheduled_date DESC
+    LIMIT 6";
+    $monthlyStatsStmt = $conn->query($monthlyStatsQuery);
+    $monthlyStats = $monthlyStatsStmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch recent reports
-$reportsQuery = "SELECT 
-    r.*,
-    u.username as generated_by_name
-FROM generated_reports r
-LEFT JOIN users u ON r.generated_by = u.id
-ORDER BY r.generated_date DESC 
-LIMIT 10";
-$reportsStmt = $conn->query($reportsQuery);
-$reports = $reportsStmt->fetchAll(PDO::FETCH_ASSOC);
+    // Fetch recent reports
+    $reportsQuery = "SELECT 
+        r.*,
+        u.username as generated_by_name
+    FROM generated_reports r
+    LEFT JOIN users u ON r.generated_by = u.id
+    ORDER BY r.generated_date DESC 
+    LIMIT 10";
+    $reportsStmt = $conn->query($reportsQuery);
+    $reports = $reportsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+} catch (PDOException $e) {
+    // Handle query errors
+    die("Error: " . $e->getMessage());
+}
 
 // Page title
 $pageTitle = "Reports & Analytics";
 ?>
 
-<?php include 'includes/header.php'; ?>
+<?php require_once ROOT_PATH . 'includes/header.php'; ?>
 
 <!-- Add necessary stylesheets and scripts -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-<?php include 'includes/navbar.php'; ?>
-<?php include 'includes/sidebar.php'; ?>
+<?php require_once ROOT_PATH . 'includes/navbar.php'; ?>
+<?php require_once ROOT_PATH . 'includes/sidebar.php'; ?>
 
 <!-- Main Content -->
 <main id="main-content" class="lg:ml-64 ml-0 pt-16 min-h-screen bg-gray-900 transition-all duration-300 ease-in-out">
@@ -194,10 +203,9 @@ $pageTitle = "Reports & Analytics";
                                 </td>
                                 <td class="px-4 py-3 text-sm text-gray-300">
                                     <div class="flex space-x-2">
-                                            <a href="download_report.php?id=<?php echo $report['id']; ?>" 
-                                               class="text-blue-400 hover:text-blue-300">
-                                            <i class="fas fa-download"></i>
-                                            </a>
+                                        <a href="../download_report.php?id=<?php echo $report['id']; ?>" class="text-green-600 hover:text-green-900 mr-3">
+                                            <i class="fas fa-download"></i> Download
+                                        </a>
                                     </div>
                                 </td>
                             </tr>
@@ -294,10 +302,10 @@ $pageTitle = "Reports & Analytics";
     new Chart(statsCtx, {
             type: 'line',
             data: {
-            labels: <?php echo json_encode(array_column($monthlyStats, 'month')); ?>,
+            labels: <?php echo !empty($monthlyStats) ? json_encode(array_column($monthlyStats, 'month')) : '[]'; ?>,
                 datasets: [{
                 label: 'Completed Appointments',
-                data: <?php echo json_encode(array_column($monthlyStats, 'appointment_count')); ?>,
+                data: <?php echo !empty($monthlyStats) ? json_encode(array_column($monthlyStats, 'appointment_count')) : '[]'; ?>,
                 borderColor: 'rgba(124, 58, 237, 1)',
                     backgroundColor: 'rgba(124, 58, 237, 0.2)',
                     tension: 0.4,
@@ -305,7 +313,7 @@ $pageTitle = "Reports & Analytics";
             },
             {
                 label: 'Completed Vaccinations',
-                data: <?php echo json_encode(array_column($monthlyStats, 'vaccination_count')); ?>,
+                data: <?php echo !empty($monthlyStats) ? json_encode(array_column($monthlyStats, 'vaccination_count')) : '[]'; ?>,
                 borderColor: 'rgba(16, 185, 129, 1)',
                 backgroundColor: 'rgba(16, 185, 129, 0.2)',
                 tension: 0.4,
@@ -340,8 +348,8 @@ $pageTitle = "Reports & Analytics";
 
 // Function to generate and download reports
 function generateReport(type) {
-    window.location.href = `generate_report.php?type=${type}`;
+    window.location.href = `../generate_report.php?type=${type}`;
 }
 </script>
 
-<?php include 'includes/footer.php'; ?> 
+<?php require_once ROOT_PATH . 'includes/footer.php'; ?>

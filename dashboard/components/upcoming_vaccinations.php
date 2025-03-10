@@ -38,7 +38,7 @@ if (!defined('DASHBOARD_INCLUDE')) {
             <?php endif; ?>
         </div>
         <div class="mt-6">
-            <a href="reports.php" class="text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200 flex items-center">
+            <a href="../admin_pages/reports.php" class="text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200 flex items-center">
                 View all appointments
                 <i class="fas fa-arrow-right text-xs ml-1"></i>
             </a>

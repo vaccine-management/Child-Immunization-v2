@@ -5,6 +5,10 @@ if (!isset($_SESSION['user'])) {
     exit();
 }
 
+// Determine if we're in admin_pages directory or root
+$isInAdminDir = strpos($_SERVER['SCRIPT_FILENAME'], 'admin_pages') !== false;
+$baseUrl = $isInAdminDir ? '../' : '';
+
 // Prepare and execute a query to fetch user details from the database
 try {
     // Use username from the database as confirmed by the user
@@ -111,7 +115,7 @@ $profileImage = $_SESSION['user']['profile_image'] ?? null;
                         </div>
 
                         <!-- View All Link -->
-                        <a href="notifications.php" class="block px-4 py-3 text-sm text-center text-blue-400 hover:text-blue-300 
+                        <a href="<?php echo $baseUrl; ?>notifications.php" class="block px-4 py-3 text-sm text-center text-blue-400 hover:text-blue-300 
                                                         border-t border-gray-700 transition-colors duration-200 bg-gray-800/50">
                             View all notifications
                         </a>
@@ -126,7 +130,7 @@ $profileImage = $_SESSION['user']['profile_image'] ?? null;
                         <div class="flex items-center space-x-3">
                             <?php if ($profileImage): ?>
                                 <img class="h-8 w-8 rounded-lg object-cover ring-2 ring-blue-500/30" 
-                                     src="<?php echo htmlspecialchars($profileImage); ?>" 
+                                     src="<?php echo $baseUrl . 'uploads/profiles/' . htmlspecialchars($profileImage); ?>" 
                                      alt="Profile">
                             <?php else: ?>
                                 <div class="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 
@@ -153,7 +157,7 @@ $profileImage = $_SESSION['user']['profile_image'] ?? null;
                         </div>
                         
                         <div class="py-1">
-                            <a href="profile.php" class="group flex items-center px-4 py-2.5 text-sm text-gray-300 hover:bg-blue-500/10 
+                            <a href="<?php echo $baseUrl; ?>profile.php" class="group flex items-center px-4 py-2.5 text-sm text-gray-300 hover:bg-blue-500/10 
                                                        transition-colors duration-200">
                                 <i class="fas fa-user-circle w-5 mr-3 text-gray-400 group-hover:text-blue-400"></i>
                                 Your Profile
@@ -161,7 +165,7 @@ $profileImage = $_SESSION['user']['profile_image'] ?? null;
                         </div>
                         
                         <div class="py-1 border-t border-gray-700">
-                            <a href="logout.php" class="group flex items-center px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 
+                            <a href="<?php echo $baseUrl; ?>logout.php" class="group flex items-center px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 
                                                       transition-colors duration-200">
                                 <i class="fas fa-sign-out-alt w-5 mr-3 group-hover:text-red-500"></i>
                                 Sign out
