@@ -3,45 +3,85 @@ session_start();
 include 'includes/header.php';
 include 'backend/db.php'; 
 
+// Clear error on page refresh (not form submission)
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $error = null; 
+}
+
 // Store the redirect message if the user just logged in
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = $_POST['email']; 
     $password = $_POST['password'];
     $role = $_POST['role']; 
-
-    // Fetch user from the database with plain text password comparison
-    $stmt = $conn->prepare("SELECT id, email, password, role FROM users WHERE email = :email AND password = :password AND role = :role");
-    $stmt->bindParam(':email', $email);
-    $stmt->bindParam(':password', $password);
-    $stmt->bindParam(':role', $role);
-    $stmt->execute();
-    $user = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if ($user) {
-        // Store user data in session
-        $_SESSION['user'] = [
-            'id' => $user['id'],
-            'email' => $user['email'],
-            'role' => $user['role']
-        ];
-        
-        // Set login success message
-        $_SESSION['login_success'] = true;
-        header('Location: dashboard.php');
-        exit();
+    
+    // Enhanced debugging
+    error_log("Login attempt - Email: $email, Role: $role");
+    
+    // Check if user exists first
+    $check_stmt = $conn->prepare("SELECT COUNT(*) FROM users WHERE email = :email");
+    $check_stmt->bindParam(':email', $email);
+    $check_stmt->execute();
+    $user_exists = $check_stmt->fetchColumn() > 0;
+    
+    error_log("User exists in database: " . ($user_exists ? "YES" : "NO"));
+    
+    if (!$user_exists) {
+        $error = "No account found with this email. Please check your email address.";
     } else {
-        $error = "Invalid email, password, or role.";
+        // Check if user with this email and role exists
+        $check_role_stmt = $conn->prepare("SELECT COUNT(*) FROM users WHERE email = :email AND role = :role");
+        $check_role_stmt->bindParam(':email', $email);
+        $check_role_stmt->bindParam(':role', $role);
+        $check_role_stmt->execute();
+        $role_matches = $check_role_stmt->fetchColumn() > 0;
+        
+        error_log("Email and role match in database: " . ($role_matches ? "YES" : "NO"));
+        
+        if (!$role_matches) {
+            $error = "The selected role doesn't match the account. Please select the correct role.";
+        } else {
+            // Fetch user from the database (with matching email and role)
+            $stmt = $conn->prepare("SELECT id, email, password, role FROM users WHERE email = :email AND role = :role");
+            $stmt->bindParam(':email', $email);
+            $stmt->bindParam(':role', $role);
+            $stmt->execute();
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            // Debug password verification
+            error_log("User found - ID: {$user['id']}, Email: {$user['email']}, Role: {$user['role']}");
+            error_log("Password hash from DB: " . $user['password']);
+            
+            // Verify password using password_verify
+            $password_verified = password_verify($password, $user['password']);
+            error_log("password_verify() result: " . ($password_verified ? "TRUE" : "FALSE"));
+            
+            if ($password_verified) {
+                // Password is correct, set session data
+                $_SESSION['user'] = [
+                    'id' => $user['id'],
+                    'email' => $user['email'],
+                    'role' => $user['role']
+                ];
+                
+                // Set login success message
+                $_SESSION['login_success'] = true;
+                error_log("Login successful - Redirecting to dashboard");
+                header('Location: dashboard.php');
+                exit();
+            } else {
+                error_log("Password verification failed");
+                $error = "Invalid password. Please try again.";
+            }
+        }
     }
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Child Immunization System</title>
+    <!-- Existing meta tags and title -->
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
     <style>
         .login-bg {
@@ -50,9 +90,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             background-position: center;
         }
         .glass-effect {
-            background: rgba(17, 24, 39, 0.7);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
         .role-card {
             transition: all 0.3s ease;
@@ -60,18 +101,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .role-card.selected {
             border-color: rgba(59, 130, 246, 1);
             box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+            transform: translateY(-4px);
         }
-        .animate-float {
-            animation: float 6s ease-in-out infinite;
+        .btn-gradient {
+            background: linear-gradient(to right, #3b82f6, #2563eb);
         }
-        @keyframes float {
-            0% { transform: translateY(0px); }
-            50% { transform: translateY(-20px); }
-            100% { transform: translateY(0px); }
+        .feature-icon {
+            transition: all 0.3s ease;
+        }
+        .feature-item:hover .feature-icon {
+            transform: scale(1.1);
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+        }
+        .form-input:focus {
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+        }
+        @keyframes pulse-border {
+            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+        .pulse-animation {
+            animation: pulse-border 2s infinite;
         }
     </style>
 </head>
-<body class="bg-gray-900">
+<body class="bg-slate-900 text-gray-200 font-sans antialiased">
     <div class="min-h-screen flex">
         <!-- Left Side - Information Section -->
         <div class="hidden lg:flex lg:w-1/2 relative login-bg">
@@ -82,7 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-white/10 backdrop-blur-sm mb-6">
                         <i class="fas fa-syringe text-blue-400 text-3xl"></i>
                     </div>
-                    <h1 class="text-4xl font-bold text-white mb-4">Child Immunization System</h1>
+                    <h1 class="text-4xl font-bold text-white mb-2">CHILD IMMUNIZATION SYSTEM</h1>
                     <p class="text-xl text-blue-200">Ensuring a healthier future for every child</p>
                 </div>
                 
@@ -122,116 +177,121 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
 
         <!-- Right Side - Login Form -->
-        <div class="w-full lg:w-1/2 flex items-center justify-center p-8 bg-gray-900">
-            <div class="w-full max-w-md space-y-8 animate__animated animate__fadeIn">
-                <!-- Error Message -->
-                <?php if (isset($error)): ?>
-                    <div class="bg-red-500/20 border-l-4 border-red-500 p-4 animate__animated animate__headShake">
-                        <div class="flex items-center">
-                            <i class="fas fa-exclamation-circle text-red-400 mr-2"></i>
-                            <p class="text-red-300"><?php echo $error; ?></p>
-                        </div>
-                    </div>
-                <?php endif; ?>
+        <div class="w-full lg:w-1/2 flex items-center justify-center p-6 md:p-8 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
+    <div class="w-full max-w-md space-y-8 animate__animated animate__fadeIn">
+       <!-- Error Message -->
+<?php if (isset($error)): ?>
+    <div id="error-message" class="bg-red-500/20 border-l-4 border-red-500 p-4 animate__animated animate__headShake rounded-r-lg shadow-lg">
+                <div class="flex items-center">
+                    <i class="fas fa-exclamation-circle text-red-400 mr-3"></i>
+                    <p class="text-red-300"><?php echo $error; ?></p>
+                </div>
+            </div>
+<?php endif; ?>
 
-                <div class="glass-effect rounded-2xl shadow-2xl overflow-hidden">
-                    <div class="p-8">
-                        <h2 class="text-2xl font-bold text-white mb-2">Welcome Back</h2>
-                        <p class="text-gray-400 mb-6">Please sign in to your account</p>
-                        
+        <div class="glass-effect rounded-2xl shadow-2xl overflow-hidden">
+            <div class="p-8">
+                <div class="text-center mb-8">
+                    <h2 class="text-3xl font-bold text-white mb-2">Welcome Back</h2>
+                    <p class="text-gray-400">Sign in to access your dashboard</p>
+                </div>
                         <form id="loginForm" method="POST" class="space-y-6">
                             <!-- Email Input -->
-                            <div class="relative">
-                                <div class="absolute left-3 top-3.5 text-gray-400">
+                            <div class="relative group">
+                                <div class="absolute left-3 top-3.5 text-gray-400 group-focus-within:text-blue-400 transition-colors duration-200">
                                     <i class="fas fa-envelope"></i>
                                 </div>
                                 <input type="email" id="email" name="email" required
-                                       class="w-full bg-gray-800/50 border border-gray-700 text-white rounded-lg pl-10 pr-3 py-3
+                                       class="form-input w-full bg-slate-800/80 border border-slate-700 text-white rounded-lg pl-10 pr-3 py-3
                                               focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent 
                                               transition-all duration-200"
                                        placeholder="Your email address">
                             </div>
-
+                        
                             <!-- Password Input -->
-                            <div class="relative">
-                                <div class="absolute left-3 top-3.5 text-gray-400">
+                            <div class="relative group">
+                                <div class="absolute left-3 top-3.5 text-gray-400 group-focus-within:text-blue-400 transition-colors duration-200">
                                     <i class="fas fa-lock"></i>
                                 </div>
                                 <input type="password" id="password" name="password" required
-                                       class="w-full bg-gray-800/50 border border-gray-700 text-white rounded-lg pl-10 pr-10 py-3
+                                       class="form-input w-full bg-slate-800/80 border border-slate-700 text-white rounded-lg pl-10 pr-10 py-3
                                               focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
                                               transition-all duration-200"
                                        placeholder="Your password">
                                 <button type="button" id="togglePassword" 
-                                        class="absolute right-3 top-3.5 text-gray-400 hover:text-gray-300 focus:outline-none">
+                                        class="absolute right-3 top-3.5 text-gray-400 hover:text-blue-400 focus:outline-none transition-colors duration-200">
                                     <i class="fas fa-eye"></i>
                                 </button>
                             </div>
-
+                        
                             <!-- Role Selection -->
-                            <div class="space-y-3">
-                                <label class="block text-sm font-medium text-white">Select your role</label>
+                            <div class="mt-4 mb-6">
+                                <label class="block text-gray-400 mb-2">Select your role:</label>
                                 <div class="grid grid-cols-2 gap-4">
-                                    <div class="role-card bg-gray-800/50 border border-gray-700 rounded-lg p-4 cursor-pointer hover:border-blue-400 transition-all duration-200" data-role="Admin">
+                                    <div class="role-card bg-slate-800/80 border border-slate-700 rounded-lg p-4 cursor-pointer hover:border-blue-400 transition-all duration-300" data-role="Admin">
                                         <input type="radio" name="role" value="Admin" class="hidden" required>
                                         <div class="flex flex-col items-center">
-                                            <div class="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center mb-2">
+                                            <div class="w-12 h-12 rounded-full bg-blue-600/20 flex items-center justify-center mb-3">
                                                 <i class="fas fa-user-shield text-blue-400 text-xl"></i>
                                             </div>
                                             <span class="text-white font-medium">Admin</span>
                                         </div>
                                     </div>
-                                    <div class="role-card bg-gray-800/50 border border-gray-700 rounded-lg p-4 cursor-pointer hover:border-blue-400 transition-all duration-200" data-role="Nurse">
+                                    <div class="role-card bg-slate-800/80 border border-slate-700 rounded-lg p-4 cursor-pointer hover:border-blue-400 transition-all duration-300" data-role="Nurse">
                                         <input type="radio" name="role" value="Nurse" class="hidden" required>
                                         <div class="flex flex-col items-center">
-                                            <div class="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center mb-2">
-                                                <i class="fas fa-user-nurse text-green-400 text-xl"></i>
+                                            <div class="w-12 h-12 rounded-full bg-blue-600/20 flex items-center justify-center mb-3">
+                                                <i class="fas fa-user-nurse text-blue-400 text-xl"></i>
                                             </div>
                                             <span class="text-white font-medium">Nurse</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-
-                            <!-- Remember me / Forgot password -->
-                            <div class="flex items-center justify-between">
-                                <div class="flex items-center">
-                                    <input id="remember-me" name="remember-me" type="checkbox" 
-                                          class="h-4 w-4 text-blue-500 bg-gray-800 border-gray-700 rounded focus:ring-blue-500 focus:ring-offset-gray-900">
-                                    <label for="remember-me" class="ml-2 block text-sm text-gray-300">
-                                        Remember me
-                                    </label>
-                                </div>
-                                <a href="forgot_password.php" class="text-sm text-blue-400 hover:text-blue-300 transition-colors">
+                        
+                            <!-- Forgot Password Link -->
+                            <div class="flex justify-end">
+                                <a href="forgot_password.php" class="text-sm text-blue-400 hover:text-blue-300 hover:underline transition-all duration-200">
                                     Forgot password?
                                 </a>
                             </div>
-
+                        
                             <!-- Submit Button -->
                             <button type="submit"
                                     class="group relative w-full flex items-center justify-center py-3 px-4 
-                                           bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700
-                                           text-white font-medium rounded-lg transition-all duration-200
-                                           focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                          text-white font-semibold rounded-lg
+                                          btn-gradient shadow-lg shadow-blue-500/20
+                                          hover:shadow-blue-500/40 transition-all duration-300 transform hover:translate-y-[-2px]">
                                 <span class="absolute left-0 inset-y-0 flex items-center pl-3">
-                                    <i class="fas fa-sign-in-alt text-blue-300 group-hover:text-blue-200 transition-colors"></i>
+                                    <i class="fas fa-sign-in-alt text-blue-200 group-hover:text-white transition-colors duration-200"></i>
                                 </span>
-                                <span id="loginText">Sign in</span>
-                                <span id="loadingSpinner" class="hidden ml-2">
-                                    <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                </span>
+                                Sign in
                             </button>
                         </form>
-                    </div>
+                    
                 </div>
             </div>
         </div>
     </div>
 
     <script>
+        // Function to hide notifications after 5 seconds with fade out animation
+        function hideNotifications() {
+            const errorMessage = document.getElementById('error-message');
+
+            if (errorMessage) {
+                setTimeout(() => {
+                    errorMessage.classList.remove('animate__headShake');
+                    errorMessage.classList.add('animate__fadeOut');
+                    setTimeout(() => {
+                        errorMessage.style.display = 'none';
+                    }, 1000);
+                }, 3000); 
+            }
+        }
+
+        // Call the function when the page loads
+        window.onload = hideNotifications;
         // Toggle password visibility
         document.getElementById('togglePassword').addEventListener('click', function() {
             const passwordInput = document.getElementById('password');
@@ -247,13 +307,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 icon.classList.add('fa-eye');
             }
         });
-
-        // Handle role selection
-        const roleCards = document.querySelectorAll('.role-card');
-        roleCards.forEach(card => {
+    
+        // Role selection with enhanced animation
+        document.querySelectorAll('.role-card').forEach(card => {
             card.addEventListener('click', function() {
                 // Remove selected class from all cards
-                roleCards.forEach(c => c.classList.remove('selected'));
+                document.querySelectorAll('.role-card').forEach(c => {
+                    c.classList.remove('selected');
+                });
                 
                 // Add selected class to clicked card
                 this.classList.add('selected');
@@ -263,11 +324,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 radio.checked = true;
             });
         });
-
-        // Show loading spinner on form submit
-        document.getElementById('loginForm').addEventListener('submit', function() {
-            document.getElementById('loginText').classList.add('hidden');
-            document.getElementById('loadingSpinner').classList.remove('hidden');
+    
+        // Add subtle animation to the form
+        const form = document.getElementById('loginForm');
+        form.addEventListener('submit', function() {
+            const submitButton = this.querySelector('button[type="submit"]');
+            submitButton.classList.add('pulse-animation');
         });
     </script>
 </body>

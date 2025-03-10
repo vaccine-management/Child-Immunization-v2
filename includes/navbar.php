@@ -47,7 +47,7 @@ $profileImage = $_SESSION['user']['profile_image'] ?? null;
                     </div>
                     <div class="ml-3">
                         <h1 class="text-xl font-bold bg-gradient-to-r from-white via-blue-100 to-white bg-clip-text text-transparent tracking-wide">
-                            CHILD IMMUNIZATION
+                            SAFE SHOT
                         </h1>
                         <p class="text-xs text-blue-400">Healthcare Management System</p>
                     </div>
