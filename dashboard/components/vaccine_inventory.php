@@ -32,7 +32,7 @@ if (!defined('DASHBOARD_INCLUDE')) {
             <?php endforeach; ?>
         </div>
         <div class="mt-6">
-            <a href="vaccines.php" class="inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors duration-200">
+            <a href="admin_pages\inventory.php" class="inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors duration-200">
                 Manage Inventory
             </a>
         </div>
