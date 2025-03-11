@@ -29,9 +29,6 @@ include 'components/stats_cards.php';
     <!-- Right Column - full width on mobile, 1/3 width on desktop -->
     <div class="lg:col-span-4 space-y-6">
         <?php 
-        // Include the calendar component
-        include 'components/calendar.php';
-        
         // Include the vaccine inventory component
         include 'components/vaccine_inventory.php';
         
