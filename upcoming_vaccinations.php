@@ -63,3 +63,12 @@ $upcomingVaccinations = $stmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 </body>
 </html>
+    }
+    
+    todayBtn.addEventListener('click', () => filterByDate('today'));
+    weekBtn.addEventListener('click', () => filterByDate('week'));
+    monthBtn.addEventListener('click', () => filterByDate('month'));
+});
+</script>
+
+<?php include 'includes/footer.php'; ?>

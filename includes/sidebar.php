@@ -66,22 +66,7 @@ $userRole = strtolower($_SESSION['user']['role'] ?? 'nurse');
                             <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
                         <?php endif; ?>
                     </a>
-                </li>
-
-                <!-- SMS - Both admin and nurse -->
-                <li>
-                    <a href="<?php echo $baseUrl; ?>sms_dashboard.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
-                          <?php echo ($currentPage === 'sms_dashboard.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
-                        <div class="w-8 h-8 flex items-center justify-center mr-3
-                            <?php echo ($currentPage === 'sms_dashboard.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
-                            <i class="fas fa-sms"></i>
-                        </div>
-                        <span class="text-sm">SMS Notifications</span>
-                        <?php if ($currentPage === 'sms_dashboard.php'): ?>
-                            <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
-                        <?php endif; ?>
-                    </a>
-                </li>
+                        </li>
 
                 <!-- Admin-specific menu items -->
                 <?php if ($userRole === 'admin'): ?>
@@ -100,21 +85,6 @@ $userRole = strtolower($_SESSION['user']['role'] ?? 'nurse');
                     </a>
                 </li>
 
-                <!-- Reports - Admin only -->
-                <li>
-                    <a href="<?php echo $baseUrl; ?>admin_pages/reports.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
-                          <?php echo ($currentPage === 'reports.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
-                        <div class="w-8 h-8 flex items-center justify-center mr-3
-                            <?php echo ($currentPage === 'reports.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
-                            <i class="fas fa-chart-bar"></i>
-                        </div>
-                        <span class="text-sm">Reports</span>
-                        <?php if ($currentPage === 'reports.php'): ?>
-                            <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
-                        <?php endif; ?>
-                    </a>
-                </li>
-
                 <!-- Users Management - Admin only -->
                 <li>
                     <a href="<?php echo $baseUrl; ?>admin_pages/users.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
@@ -125,6 +95,19 @@ $userRole = strtolower($_SESSION['user']['role'] ?? 'nurse');
                         </div>
                         <span class="text-sm">Users</span>
                         <?php if ($currentPage === 'users.php'): ?>
+                            <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
+                        <?php endif; ?>
+                    </a>
+                </li>
+                <li>
+                    <a href="<?php echo $baseUrl; ?>sms_dashboard.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
+                          <?php echo ($currentPage === 'sms_dashboard.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
+                        <div class="w-8 h-8 flex items-center justify-center mr-3
+                            <?php echo ($currentPage === 'sms_dashboard.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
+                            <i class="fas fa-sms"></i>
+                        </div>
+                        <span class="text-sm">SMS Notifications</span>
+                        <?php if ($currentPage === 'sms_dashboard.php'): ?>
                             <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
                         <?php endif; ?>
                     </a>
