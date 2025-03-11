@@ -13,7 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = $_POST['email']; 
     $password = $_POST['password'];
     $role = $_POST['role']; 
-    
+
     // Enhanced debugging
     error_log("Login attempt - Email: $email, Role: $role");
     
@@ -41,12 +41,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = "The selected role doesn't match the account. Please select the correct role.";
         } else {
             // Fetch user from the database (with matching email and role)
-            $stmt = $conn->prepare("SELECT id, email, password, role FROM users WHERE email = :email AND role = :role");
+            $stmt = $conn->prepare("SELECT id, email, password, role, username FROM users WHERE email = :email AND role = :role");
             $stmt->bindParam(':email', $email);
             $stmt->bindParam(':role', $role);
             $stmt->execute();
             $user = $stmt->fetch(PDO::FETCH_ASSOC);
-            
+
             // Debug password verification
             error_log("User found - ID: {$user['id']}, Email: {$user['email']}, Role: {$user['role']}");
             error_log("Password hash from DB: " . $user['password']);
@@ -60,7 +60,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['user'] = [
                     'id' => $user['id'],
                     'email' => $user['email'],
-                    'role' => $user['role']
+                    'role' => $user['role'],
+                    'username' => $user['username']
                 ];
                 
                 // Set login success message
@@ -178,19 +179,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <!-- Right Side - Login Form -->
         <div class="w-full lg:w-1/2 flex items-center justify-center p-6 md:p-8 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
-    <div class="w-full max-w-md space-y-8 animate__animated animate__fadeIn">
-       <!-- Error Message -->
-<?php if (isset($error)): ?>
+            <div class="w-full max-w-md space-y-8 animate__animated animate__fadeIn">
+                <!-- Error Message -->
+                <?php if (isset($error)): ?>
     <div id="error-message" class="bg-red-500/20 border-l-4 border-red-500 p-4 animate__animated animate__headShake rounded-r-lg shadow-lg">
-                <div class="flex items-center">
+                        <div class="flex items-center">
                     <i class="fas fa-exclamation-circle text-red-400 mr-3"></i>
-                    <p class="text-red-300"><?php echo $error; ?></p>
-                </div>
-            </div>
-<?php endif; ?>
+                            <p class="text-red-300"><?php echo $error; ?></p>
+                        </div>
+                    </div>
+                <?php endif; ?>
 
-        <div class="glass-effect rounded-2xl shadow-2xl overflow-hidden">
-            <div class="p-8">
+                <div class="glass-effect rounded-2xl shadow-2xl overflow-hidden">
+                    <div class="p-8">
                 <div class="text-center mb-8">
                     <h2 class="text-3xl font-bold text-white mb-2">Welcome Back</h2>
                     <p class="text-gray-400">Sign in to access your dashboard</p>
@@ -207,7 +208,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                               transition-all duration-200"
                                        placeholder="Your email address">
                             </div>
-                        
+
                             <!-- Password Input -->
                             <div class="relative group">
                                 <div class="absolute left-3 top-3.5 text-gray-400 group-focus-within:text-blue-400 transition-colors duration-200">
@@ -223,7 +224,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <i class="fas fa-eye"></i>
                                 </button>
                             </div>
-                        
+
                             <!-- Role Selection -->
                             <div class="mt-4 mb-6">
                                 <label class="block text-gray-400 mb-2">Select your role:</label>
@@ -248,14 +249,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     </div>
                                 </div>
                             </div>
-                        
+
                             <!-- Forgot Password Link -->
                             <div class="flex justify-end">
                                 <a href="forgot_password.php" class="text-sm text-blue-400 hover:text-blue-300 hover:underline transition-all duration-200">
                                     Forgot password?
                                 </a>
                             </div>
-                        
+
                             <!-- Submit Button -->
                             <button type="submit"
                                     class="group relative w-full flex items-center justify-center py-3 px-4 
@@ -307,7 +308,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 icon.classList.add('fa-eye');
             }
         });
-    
+
         // Role selection with enhanced animation
         document.querySelectorAll('.role-card').forEach(card => {
             card.addEventListener('click', function() {
@@ -324,7 +325,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 radio.checked = true;
             });
         });
-    
+
         // Add subtle animation to the form
         const form = document.getElementById('loginForm');
         form.addEventListener('submit', function() {

@@ -9,6 +9,8 @@ if (!isset($_SESSION['user'])) {
 
 // Include database connection
 include 'backend/db.php';
+// Include the vaccine helper functions
+include 'backend/vaccine_helpers.php';
 
 // Prepare and execute a query to fetch user details from the database
 try {
@@ -92,31 +94,29 @@ $ageGroupQuery = "
 ";
 $ageGroupResult = $conn->query($ageGroupQuery)->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch upcoming vaccines and missed appointments
-$upcomingQuery = "
-    SELECT c.full_name, v.vaccine_name, v.scheduled_date, v.status
-    FROM vaccinations v
-    JOIN children c ON v.child_id = c.child_id
-    WHERE v.scheduled_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)
-    OR (v.scheduled_date < CURDATE() AND v.status = 'Scheduled')
-    ORDER BY v.scheduled_date
-    LIMIT 10
-";
-$upcomingVaccines = $conn->query($upcomingQuery)->fetchAll(PDO::FETCH_ASSOC);
+// Use the helper function to fetch upcoming appointments
+$upcomingAppointments = getUpcomingAppointments(date('Y-m-d'), date('Y-m-d', strtotime('+7 days')));
+
+// Convert appointments to the format expected by the component
+$upcomingVaccines = [];
+foreach ($upcomingAppointments as $appointment) {
+    // Get vaccines for this appointment
+    $appointmentVaccines = getAppointmentVaccines($appointment['id']);
+    
+    foreach ($appointmentVaccines as $vaccine) {
+        $upcomingVaccines[] = [
+            'child_id' => $appointment['child_id'],
+            'full_name' => $appointment['child_name'],
+            'vaccine_name' => $vaccine['vaccine_name'],
+            'scheduled_date' => $appointment['scheduled_date'],
+            'status' => $appointment['status']
+        ];
+    }
+}
 
 // Fetch gender distribution
 $genderQuery = "SELECT gender, COUNT(*) as count FROM children GROUP BY gender";
 $genderDistribution = $conn->query($genderQuery)->fetchAll(PDO::FETCH_ASSOC);
-
-// Sample vaccine stock data (since table doesn't exist yet)
-$vaccineStock = [
-    ['vaccine_name' => 'BCG', 'quantity' => 400],
-    ['vaccine_name' => 'OPV', 'quantity' => 32],
-    ['vaccine_name' => 'DPT', 'quantity' => 8],
-    ['vaccine_name' => 'Measles', 'quantity' => 25],
-    ['vaccine_name' => 'Hepatitis B', 'quantity' => 15],
-    ['vaccine_name' => 'Rotavirus', 'quantity' => 12]
-];
 
 // Fetch registered children for the table
 $childrenQuery = "
@@ -125,6 +125,43 @@ $childrenQuery = "
     ORDER BY registration_date DESC
 ";
 $registeredChildren = $conn->query($childrenQuery)->fetchAll(PDO::FETCH_ASSOC);
+
+// Get vaccine inventory using the helper function
+$inventoryItems = getAllInventory();
+
+// Format inventory data for the dashboard
+$vaccineStock = [];
+foreach ($inventoryItems as $item) {
+    // If we already have this vaccine in the array, add to its quantity
+    $found = false;
+    foreach ($vaccineStock as &$stock) {
+        if ($stock['vaccine_name'] === $item['vaccine_name']) {
+            $stock['quantity'] += $item['quantity'];
+            $found = true;
+            break;
+        }
+    }
+    
+    // If not found, add a new entry
+    if (!$found) {
+        $vaccineStock[] = [
+            'vaccine_name' => $item['vaccine_name'],
+            'quantity' => $item['quantity']
+        ];
+    }
+}
+
+// If no inventory data yet, use sample data
+if (empty($vaccineStock)) {
+    $vaccineStock = [
+        ['vaccine_name' => 'BCG', 'quantity' => 40],
+        ['vaccine_name' => 'OPV', 'quantity' => 32],
+        ['vaccine_name' => 'DPT', 'quantity' => 8],
+        ['vaccine_name' => 'Measles', 'quantity' => 25],
+        ['vaccine_name' => 'Hepatitis B', 'quantity' => 15],
+        ['vaccine_name' => 'Rotavirus', 'quantity' => 12]
+    ];
+}
 
 // Calculate total children count
 $totalChildren = array_sum(array_column($ageGroupResult, 'count'));

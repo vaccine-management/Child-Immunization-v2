@@ -12,34 +12,59 @@ checkAdminRole();
 
 // Include the database connection file
 require_once ROOT_PATH . 'backend/db.php';
+// Include the vaccine helper functions
+require_once ROOT_PATH . 'backend/vaccine_helpers.php';
+
+// Fetch all vaccines for the dropdown
+$vaccines = getAllVaccines();
 
 // Handle form submissions for CRUD operations
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['add'])) {
         // Add new inventory item
-        $name = $_POST['name'];
+        $vaccine_id = $_POST['vaccine_id'];
         $batch_number = $_POST['batch_number'];
         $quantity = $_POST['quantity'];
         $expiry_date = $_POST['expiry_date'];
 
-        $query = "INSERT INTO inventory (name, batch_number, quantity, expiry_date) VALUES (?, ?, ?, ?)";
-        $stmt = $conn->prepare($query);
-        $stmt->execute([$name, $batch_number, $quantity, $expiry_date]);
+        // Use helper function to add inventory item
+        $result = addInventoryItem($vaccine_id, $batch_number, $quantity, $expiry_date);
+        
+        if ($result) {
+            $successMessage = "Inventory item added successfully!";
+        } else {
+            $errorMessage = "Failed to add inventory item.";
+        }
+    } elseif (isset($_POST['update'])) {
+        // Update inventory item
+        $id = $_POST['id'];
+        $quantity = $_POST['quantity'];
+        
+        // Use helper function to update inventory quantity
+        $result = updateInventoryQuantity($id, $quantity);
+        
+        if ($result) {
+            $successMessage = "Inventory updated successfully!";
+        } else {
+            $errorMessage = "Failed to update inventory.";
+        }
     } elseif (isset($_POST['delete'])) {
         // Delete inventory item
         $id = $_POST['id'];
 
-        $query = "DELETE FROM inventory WHERE id = ?";
-        $stmt = $conn->prepare($query);
-        $stmt->execute([$id]);
+        // Use helper function to delete inventory item
+        $result = deleteInventoryItem($id);
+        
+        if ($result) {
+            $successMessage = "Inventory item deleted successfully!";
+        } else {
+            $errorMessage = "Failed to delete inventory item.";
+        }
     }
 }
 
-// Fetch all inventory items from the database
-$query = "SELECT id, name, batch_number, quantity, expiry_date FROM inventory ORDER BY expiry_date ASC";
-$stmt = $conn->prepare($query);
-$stmt->execute();
-$inventory_items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+// Fetch all inventory items from the database using the helper function
+$inventory_items = getAllInventory();
 
 ?>
 
@@ -79,7 +104,7 @@ $inventory_items = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <thead class="bg-gray-800/50">
                         <tr>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">ID</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Name</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Vaccine</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Batch Number</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Quantity</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Expiry Date</th>
@@ -91,13 +116,13 @@ $inventory_items = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <?php foreach ($inventory_items as $item): ?>
                                 <tr class="hover:bg-gray-800/50 transition-colors">
                                     <td class="px-4 py-3 text-sm text-gray-300"><?php echo htmlspecialchars($item['id']); ?></td>
-                                    <td class="px-4 py-3 text-sm text-gray-300"><?php echo htmlspecialchars($item['name']); ?></td>
+                                    <td class="px-4 py-3 text-sm text-gray-300"><?php echo htmlspecialchars($item['vaccine_name']); ?></td>
                                     <td class="px-4 py-3 text-sm text-gray-300"><?php echo htmlspecialchars($item['batch_number']); ?></td>
                                     <td class="px-4 py-3 text-sm text-gray-300"><?php echo htmlspecialchars($item['quantity']); ?></td>
                                     <td class="px-4 py-3 text-sm text-gray-300"><?php echo htmlspecialchars($item['expiry_date']); ?></td>
                                     <td class="px-4 py-3 text-sm">
                                         <div class="flex space-x-2">
-                                            <button onclick="openEditModal(<?php echo $item['id']; ?>)" class="text-blue-400 hover:text-blue-300">
+                                            <button onclick="openEditModal(<?php echo $item['id']; ?>, '<?php echo $item['quantity']; ?>')" class="text-blue-400 hover:text-blue-300">
                                                 <i class="fas fa-edit"></i>
                                             </button>
                                             <button onclick="openModal('deleteModal', <?php echo $item['id']; ?>)" class="text-red-400 hover:text-red-300">
@@ -124,8 +149,13 @@ $inventory_items = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <h3 class="text-xl font-bold text-white mb-4">Add New Item</h3>
             <form method="POST" action="">
                 <div class="mb-4">
-                    <label for="name" class="block text-gray-300 mb-2">Name</label>
-                    <input type="text" name="name" id="name" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
+                    <label for="vaccine_id" class="block text-gray-300 mb-2">Vaccine</label>
+                    <select name="vaccine_id" id="vaccine_id" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
+                        <option value="">Select Vaccine</option>
+                        <?php foreach ($vaccines as $vaccine): ?>
+                            <option value="<?php echo $vaccine['id']; ?>"><?php echo htmlspecialchars($vaccine['name']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
                 <div class="mb-4">
                     <label for="batch_number" class="block text-gray-300 mb-2">Batch Number</label>
@@ -151,13 +181,35 @@ $inventory_items = $stmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 
-    <!-- Delete Inventory Modal -->
+    <!-- Edit Inventory Modal -->
+    <div id="editModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center">
+        <div class="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 class="text-xl font-bold text-white mb-4">Edit Inventory Item</h3>
+            <form method="POST" action="">
+                <input type="hidden" name="id" id="edit_id">
+                <div class="mb-4">
+                    <label for="edit_quantity" class="block text-gray-300 mb-2">Quantity</label>
+                    <input type="number" name="quantity" id="edit_quantity" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
+                </div>
+                <div class="flex justify-end space-x-4">
+                    <button type="button" onclick="closeModal('editModal')" class="px-4 py-2 text-gray-300 hover:text-white">
+                        Cancel
+                    </button>
+                    <button type="submit" name="update" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        Update
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
     <div id="deleteModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center">
         <div class="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
             <h3 class="text-xl font-bold text-white mb-4">Confirm Delete</h3>
-            <p class="text-gray-300 mb-6">Are you sure you want to delete this item? This action cannot be undone.</p>
+            <p class="text-gray-300 mb-4">Are you sure you want to delete this inventory item?</p>
             <form method="POST" action="">
-                <input type="hidden" name="id" id="delete-id">
+                <input type="hidden" name="id" id="delete_id">
                 <div class="flex justify-end space-x-4">
                     <button type="button" onclick="closeModal('deleteModal')" class="px-4 py-2 text-gray-300 hover:text-white">
                         Cancel
@@ -170,156 +222,26 @@ $inventory_items = $stmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 
-    <!-- Edit Inventory Modal -->
-    <div id="editModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center">
-        <div class="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 class="text-xl font-bold text-white mb-4">Edit Item</h3>
-            <div id="editModalContent">
-                <!-- Loading animation -->
-                <div class="animate-pulse">
-                    <div class="h-4 bg-gray-700 rounded w-3/4 mb-6"></div>
-                    <div class="h-8 bg-gray-700 rounded mb-4"></div>
-                    <div class="h-8 bg-gray-700 rounded mb-4"></div>
-                    <div class="h-8 bg-gray-700 rounded mb-4"></div>
-                    <div class="h-8 bg-gray-700 rounded mb-4"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <script>
-        function openModal(modalId, id = null) {
-            if (modalId === 'deleteModal') {
-                document.getElementById('delete-id').value = id;
-            }
+        function openModal(modalId, id) {
             document.getElementById(modalId).classList.remove('hidden');
             document.getElementById(modalId).classList.add('flex');
-        }
-
-        function closeModal(modalId) {
-            document.getElementById(modalId).classList.add('hidden');
-            document.getElementById(modalId).classList.remove('flex');
+            
+            if (id) {
+                document.getElementById(modalId === 'deleteModal' ? 'delete_id' : 'edit_id').value = id;
+            }
         }
         
-        function openEditModal(id) {
-            // Show the modal with loading animation
-            document.getElementById('editModal').classList.remove('hidden');
-            document.getElementById('editModal').classList.add('flex');
-            
-            // Fetch item data via AJAX
-            fetch(`get_inventory_item.php?id=${id}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        document.getElementById('editModalContent').innerHTML = `
-                            <div class="bg-red-500 text-white p-3 rounded-lg mb-4">
-                                ${data.error}
-                            </div>`;
-                        return;
-                    }
-                    
-                    // Format the date for the date input field
-                    const formattedDate = data.expiry_date;
-                    
-                    // Populate the modal with a form
-                    document.getElementById('editModalContent').innerHTML = `
-                        <form id="editItemForm">
-                            <input type="hidden" name="id" value="${data.id}">
-                            <div class="mb-4">
-                                <label for="edit_name" class="block text-gray-300 mb-2">Name</label>
-                                <input type="text" id="edit_name" name="name" value="${data.name}" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
-                            </div>
-                            <div class="mb-4">
-                                <label for="edit_batch_number" class="block text-gray-300 mb-2">Batch Number</label>
-                                <input type="text" id="edit_batch_number" name="batch_number" value="${data.batch_number}" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
-                            </div>
-                            <div class="mb-4">
-                                <label for="edit_quantity" class="block text-gray-300 mb-2">Quantity</label>
-                                <input type="number" id="edit_quantity" name="quantity" value="${data.quantity}" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
-                            </div>
-                            <div class="mb-4">
-                                <label for="edit_expiry_date" class="block text-gray-300 mb-2">Expiry Date</label>
-                                <input type="date" id="edit_expiry_date" name="expiry_date" value="${formattedDate}" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
-                            </div>
-                            <div class="flex justify-end space-x-4">
-                                <button type="button" onclick="closeModal('editModal')" class="px-4 py-2 text-gray-300 hover:text-white">
-                                    Cancel
-                                </button>
-                                <button type="button" onclick="updateItem()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                                    Update
-                                </button>
-                            </div>
-                        </form>
-                    `;
-                })
-                .catch(error => {
-                    document.getElementById('editModalContent').innerHTML = `
-                        <div class="bg-red-500 text-white p-3 rounded-lg mb-4">
-                            An error occurred while loading data
-                        </div>`;
-                });
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('flex');
+            document.getElementById(modalId).classList.add('hidden');
         }
-
-        function updateItem() {
-            const form = document.getElementById('editItemForm');
-            const formData = new FormData(form);
-            
-            // Send AJAX request to update item
-            fetch('update_inventory_item.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Display success message
-                    document.getElementById('editModalContent').innerHTML = `
-                        <div class="bg-green-500 text-white p-3 rounded-lg mb-4">
-                            ${data.success}
-                        </div>
-                        <div class="text-center mt-4">
-                            <button type="button" onclick="location.reload()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                                Refresh Page
-                            </button>
-                        </div>
-                    `;
-                    
-                    // Auto-refresh after 2 seconds
-                    setTimeout(() => {
-                        location.reload();
-                    }, 2000);
-                } else {
-                    // Display error message
-                    document.getElementById('editModalContent').innerHTML = `
-                        <div class="bg-red-500 text-white p-3 rounded-lg mb-4">
-                            ${data.error || 'An error occurred'}
-                        </div>
-                        <button type="button" onclick="closeModal('editModal')" class="w-full px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 mt-4">
-                            Close
-                        </button>
-                    `;
-                }
-            })
-            .catch(error => {
-                document.getElementById('editModalContent').innerHTML = `
-                    <div class="bg-red-500 text-white p-3 rounded-lg mb-4">
-                        An error occurred during the update
-                    </div>
-                    <button type="button" onclick="closeModal('editModal')" class="w-full px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 mt-4">
-                        Close
-                    </button>
-                `;
-            });
+        
+        function openEditModal(id, quantity) {
+            document.getElementById('edit_id').value = id;
+            document.getElementById('edit_quantity').value = quantity;
+            openModal('editModal');
         }
-
-        // Close modal when clicking outside
-        document.querySelectorAll('.fixed.inset-0').forEach(modal => {
-            modal.addEventListener('click', function(e) {
-                if (e.target === this) {
-                    closeModal(this.id);
-                }
-            });
-        });
     </script>
 </body>
 </html>

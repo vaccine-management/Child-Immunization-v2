@@ -63,19 +63,21 @@ if ($age->y > 0) {
     $ageString = $age->d . " day" . ($age->d > 1 ? "s" : "");
 }
 
-// Fetch vaccination records with scheduled time
+// Fetch vaccination records
 $stmt = $conn->prepare("
-    SELECT *, TIME_FORMAT(scheduled_time, '%h:%i %p') as formatted_time 
-    FROM vaccinations 
-    WHERE child_id = :child_id 
-    ORDER BY scheduled_date DESC, scheduled_time DESC
+    SELECT v.*, vac.name as vaccine_name, a.scheduled_date
+    FROM vaccinations v
+    JOIN vaccines vac ON v.vaccine_id = vac.id
+    LEFT JOIN appointments a ON v.appointment_id = a.id
+    WHERE v.child_id = :child_id 
+    ORDER BY v.administered_date DESC, a.scheduled_date DESC
 ");
 $stmt->bindParam(':child_id', $childId);
 $stmt->execute();
 $vaccinations = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Get vaccine options from the vaccines table
-$stmt = $conn->query("SELECT vaccine_name, max_doses, description, target_disease FROM vaccines ORDER BY vaccine_name");
+$stmt = $conn->query("SELECT name as vaccine_name, max_doses, description, target_disease FROM vaccines ORDER BY name");
 $availableVaccines = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Get taken vaccines for this child
@@ -214,11 +216,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $debug_log[] = "Transaction started";
             
             // Check if the vaccine is already scheduled
-            $stmt = $conn->prepare("SELECT child_id, vaccine_name, dose_number, scheduled_date, scheduled_time FROM vaccinations 
-                                   WHERE child_id = :child_id 
-                                   AND vaccine_name = :vaccine_name 
-                                   AND dose_number = :dose_number 
-                                   AND status = 'Scheduled'");
+            $stmt = $conn->prepare("
+                SELECT v.child_id, vac.name as vaccine_name, v.dose_number, a.scheduled_date
+                FROM vaccinations v
+                JOIN vaccines vac ON v.vaccine_id = vac.id
+                JOIN appointments a ON v.appointment_id = a.id
+                WHERE v.child_id = :child_id 
+                AND vac.name = :vaccine_name 
+                AND v.dose_number = :dose_number 
+                AND v.status = 'Scheduled'
+            ");
             $stmt->execute([
                 ':child_id' => $childId,
                 ':vaccine_name' => $vaccineName,
@@ -245,16 +252,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
                 $debug_log[] = "Updated vaccination status: " . ($result ? "Success" : "Failed");
                 
-                // Find the appointment associated with this vaccine (date only, no time)
+                // Find the appointment associated with this vaccine
                 $appointmentDate = $scheduledVaccine['scheduled_date'];
                 
                 // Find appointment_id with only the date
                 $stmt = $conn->prepare("
-                    SELECT av.appointment_id 
+                    SELECT av.id, av.appointment_id 
                     FROM appointment_vaccines av
                     JOIN appointments a ON a.id = av.appointment_id
+                    JOIN vaccines vac ON av.vaccine_id = vac.id
                     WHERE a.child_id = :child_id 
-                    AND av.vaccine_name = :vaccine_name 
+                    AND vac.name = :vaccine_name 
                     AND av.dose_number = :dose_number
                     AND a.scheduled_date = :scheduled_date
                 ");
@@ -275,7 +283,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         UPDATE appointment_vaccines 
                         SET status = 'completed' 
                         WHERE appointment_id = :appointment_id 
-                        AND vaccine_name = :vaccine_name 
+                        AND vaccine_id = (SELECT id FROM vaccines WHERE name = :vaccine_name)
                         AND dose_number = :dose_number
                     ");
                     $result = $stmt->execute([
@@ -406,17 +414,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Start transaction
             $conn->beginTransaction();
             
+            // Get vaccine_id from vaccine name
+            $stmt = $conn->prepare("SELECT id FROM vaccines WHERE name = :name");
+            $stmt->execute([':name' => $vaccineName]);
+            $vaccineData = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$vaccineData) {
+                throw new Exception("Vaccine not found: $vaccineName");
+            }
+            
+            $vaccineId = $vaccineData['id'];
+            
             // Check if this vaccine dose has already been administered
             $stmt = $conn->prepare("
                 SELECT status 
                 FROM vaccinations 
                 WHERE child_id = :child_id 
-                AND vaccine_name = :vaccine_name 
+                AND vaccine_id = :vaccine_id 
                 AND dose_number = :dose_number
             ");
             $stmt->execute([
                 ':child_id' => $childId,
-                ':vaccine_name' => $vaccineName,
+                ':vaccine_id' => $vaccineId,
                 ':dose_number' => $doseNumber
             ]);
             $existingVaccine = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -442,109 +461,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             $appointmentId = $conn->lastInsertId();
             
-            // Create the vaccination record
+            // Get the first inventory item for this vaccine (this is a simplification)
+            $stmt = $conn->prepare("
+                SELECT id FROM inventory WHERE vaccine_id = :vaccine_id AND quantity > 0 LIMIT 1
+            ");
+            $stmt->execute([':vaccine_id' => $vaccineId]);
+            $inventoryData = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$inventoryData) {
+                // If no inventory, create a dummy one for now
+                $stmt = $conn->prepare("
+                    INSERT INTO inventory (vaccine_id, batch_number, quantity, expiry_date)
+                    VALUES (:vaccine_id, 'TEMP-BATCH', 10, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR))
+                ");
+                $stmt->execute([':vaccine_id' => $vaccineId]);
+                $inventoryId = $conn->lastInsertId();
+            } else {
+                $inventoryId = $inventoryData['id'];
+            }
+            
+            // Create the vaccination record with appointment_id
             $stmt = $conn->prepare("
                 INSERT INTO vaccinations (
-                    child_id, vaccine_name, dose_number, scheduled_date, status, notes
+                    child_id, vaccine_id, dose_number, appointment_id, inventory_id, administered_date, administered_by, status, notes
                 ) VALUES (
-                    :child_id, :vaccine_name, :dose_number, :scheduled_date, 'Scheduled', :notes
+                    :child_id, :vaccine_id, :dose_number, :appointment_id, :inventory_id, :administered_date, :administered_by, 'Scheduled', :notes
                 )
             ");
             $stmt->execute([
                 ':child_id' => $childId,
-                ':vaccine_name' => $vaccineName,
+                ':vaccine_id' => $vaccineId,
                 ':dose_number' => $doseNumber,
-                ':scheduled_date' => $scheduledDate,
+                ':appointment_id' => $appointmentId,
+                ':inventory_id' => $inventoryId,
+                ':administered_date' => $scheduledDate, // Using scheduled date as administered date for now
+                ':administered_by' => $_SESSION['user']['id'], // Current user
                 ':notes' => $notes
             ]);
             
             // Link vaccine to appointment
             $stmt = $conn->prepare("
                 INSERT INTO appointment_vaccines (
-                    appointment_id, vaccine_name, dose_number, status
+                    appointment_id, vaccine_id, dose_number, status
                 ) VALUES (
-                    :appointment_id, :vaccine_name, :dose_number, 'scheduled'
+                    :appointment_id, :vaccine_id, :dose_number, 'scheduled'
                 )
             ");
             $stmt->execute([
                 ':appointment_id' => $appointmentId,
-                ':vaccine_name' => $vaccineName,
+                ':vaccine_id' => $vaccineId,
                 ':dose_number' => $doseNumber
             ]);
             
-            // Update subsequent vaccine schedules
-            // Get all scheduled vaccines after this date
-            $stmt = $conn->prepare("
-                SELECT 
-                    v.vaccine_name, 
-                    v.dose_number, 
-                    v.scheduled_date,
-                    vs.age_unit,
-                    vs.age_value,
-                    vac.max_doses
-                FROM vaccinations v
-                JOIN vaccine_schedule vs ON v.vaccine_name = vs.vaccine_name 
-                    AND v.dose_number = vs.dose_number
-                LEFT JOIN vaccines vac ON v.vaccine_name = vac.vaccine_name
-                WHERE v.child_id = :child_id 
-                AND v.status = 'Scheduled'
-                AND v.scheduled_date > :scheduled_date
-                ORDER BY v.scheduled_date ASC
-            ");
-            $stmt->execute([
-                ':child_id' => $childId,
-                ':scheduled_date' => $scheduledDate
-            ]);
-            $subsequentVaccines = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            
-            // Calculate new dates for subsequent vaccines
-            $lastDate = new DateTime($scheduledDate);
-            foreach ($subsequentVaccines as $vaccine) {
-                // Add minimum gap days to last vaccination date
-                $newDate = clone $lastDate;
-                $newDate->modify("+{$vaccine['minimum_gap_days']} days");
-                
-                // Update the vaccination schedule
-                $stmt = $conn->prepare("
-                    UPDATE vaccinations 
-                    SET scheduled_date = :new_date
-                    WHERE child_id = :child_id 
-                    AND vaccine_name = :vaccine_name 
-                    AND dose_number = :dose_number
-                ");
-                $stmt->execute([
-                    ':new_date' => $newDate->format('Y-m-d'),
-                    ':child_id' => $childId,
-                    ':vaccine_name' => $vaccine['vaccine_name'],
-                    ':dose_number' => $vaccine['dose_number']
-                ]);
-                
-                // Also update the associated appointment
-                $stmt = $conn->prepare("
-                    UPDATE appointments a
-                    JOIN appointment_vaccines av ON a.id = av.appointment_id
-                    SET a.scheduled_date = :new_date
-                    WHERE a.child_id = :child_id 
-                    AND av.vaccine_name = :vaccine_name 
-                    AND av.dose_number = :dose_number
-                ");
-                $stmt->execute([
-                    ':new_date' => $newDate->format('Y-m-d'),
-                    ':child_id' => $childId,
-                    ':vaccine_name' => $vaccine['vaccine_name'],
-                    ':dose_number' => $vaccine['dose_number']
-                ]);
-                
-                $lastDate = $newDate;
-            }
-            
+            // Commit transaction
             $conn->commit();
-            header("Location: child_profile.php?id=$childId&success=2");
-            exit();
+            $successMessage = "Vaccination scheduled successfully.";
             
         } catch (Exception $e) {
             $conn->rollBack();
-            $error = "Failed to schedule vaccine: " . $e->getMessage();
+            $errorMessage = $e->getMessage();
         }
     }
 
