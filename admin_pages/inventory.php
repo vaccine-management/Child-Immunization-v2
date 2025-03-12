@@ -27,13 +27,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $quantity = $_POST['quantity'];
         $expiry_date = $_POST['expiry_date'];
 
-        // Use helper function to add inventory item
-        $result = addInventoryItem($vaccine_id, $batch_number, $quantity, $expiry_date);
-        
-        if ($result) {
-            $successMessage = "Inventory item added successfully!";
+        // Check if the item already exists in the inventory
+        $stmt = $conn->prepare("SELECT id, quantity FROM inventory WHERE vaccine_id = ? AND batch_number = ?");
+        $stmt->execute([$vaccine_id, $batch_number]);
+        $existing_item = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($existing_item) {
+            // Item exists, update the quantity
+            $new_quantity = $existing_item['quantity'] + $quantity;
+            $update_stmt = $conn->prepare("UPDATE inventory SET quantity = ?, expiry_date = ? WHERE id = ?");
+            $result = $update_stmt->execute([$new_quantity, $expiry_date, $existing_item['id']]);
         } else {
-            $errorMessage = "Failed to add inventory item.";
+            // Item does not exist, add it to the inventory
+            $insert_stmt = $conn->prepare("INSERT INTO inventory (vaccine_id, batch_number, quantity, expiry_date) VALUES (?, ?, ?, ?)");
+            $result = $insert_stmt->execute([$vaccine_id, $batch_number, $quantity, $expiry_date]);
+        }
+
+        if ($result) {
+            $successMessage = "Inventory item added/updated successfully!";
+        } else {
+            $errorMessage = "Failed to add/update inventory item.";
         }
     } elseif (isset($_POST['update'])) {
         // Update inventory item
@@ -159,10 +172,10 @@ $inventory_items = getAllInventory();
                 </div>
                 <div class="mb-4">
                     <label for="batch_number" class="block text-gray-300 mb-2">Batch Number</label>
-                    <input type="text" name="batch_number" id="batch_number" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
+                    <input type="text" name="batch_number" id="batch_number" placeholder="BSYTE7364"class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
                 </div>
                 <div class="mb-4">
-                    <label for="quantity" class="block text-gray-300 mb-2">Quantity</label>
+                    <label for="quantity" placeholder="10" class="block text-gray-300 mb-2">Quantity</label>
                     <input type="number" name="quantity" id="quantity" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
                 </div>
                 <div class="mb-4">

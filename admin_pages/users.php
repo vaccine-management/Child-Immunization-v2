@@ -18,70 +18,94 @@ $error = '';
 $success = '';
 $edit_user = null;
 
-// Handle form submissions for adding and editing users
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['action'])) {
-        if ($_POST['action'] === 'add') {
-            // Add user logic
-            $userName = trim($_POST['user_name']);
-            $userEmail = trim($_POST['user_email']);
-            $userRole = trim($_POST['user_role']);
-            $userPassword = password_hash(trim($_POST['user_password']), PASSWORD_DEFAULT);
-
-            if (empty($userName) || empty($userEmail) || empty($userRole) || empty($_POST['user_password'])) {
-                $error = 'All fields are required.';
-            } else {
-                $stmt = $conn->prepare("INSERT INTO users (username, email, role, password) VALUES (?, ?, ?, ?)");
-                $stmt->bindParam(1, $userName);
-                $stmt->bindParam(2, $userEmail);
-                $stmt->bindParam(3, $userRole);
-                $stmt->bindParam(4, $userPassword);
-
-                if ($stmt->execute()) {
-                    $success = 'User added successfully!';
-                } else {
-                    $error = 'Failed to add user. Please try again.';
-                }
-            }
-        } elseif ($_POST['action'] === 'edit') {
-            // Edit user logic
-            $userName = trim($_POST['user_name']);
-            $userEmail = trim($_POST['user_email']);
-            $userRole = trim($_POST['user_role']);
-            $userId = $_POST['user_id'];
-
-            // Check if password is being updated
-            $passwordUpdate = !empty($_POST['user_password']);
-            
-            if (empty($userName) || empty($userEmail) || empty($userRole) || empty($userId)) {
-                $error = 'Required fields are missing.';
-            } else {
-                if ($passwordUpdate) {
-                    // Update user with password
-                    $userPassword = password_hash(trim($_POST['user_password']), PASSWORD_DEFAULT);
-                    $stmt = $conn->prepare("UPDATE users SET username = ?, email = ?, role = ?, password = ? WHERE id = ?");
-                    $stmt->bindParam(1, $userName);
-                    $stmt->bindParam(2, $userEmail);
-                    $stmt->bindParam(3, $userRole);
-                    $stmt->bindParam(4, $userPassword);
-                    $stmt->bindParam(5, $userId);
-                } else {
-                    // Update user without changing password
-                    $stmt = $conn->prepare("UPDATE users SET username = ?, email = ?, role = ? WHERE id = ?");
-                    $stmt->bindParam(1, $userName);
-                    $stmt->bindParam(2, $userEmail);
-                    $stmt->bindParam(3, $userRole);
-                    $stmt->bindParam(4, $userId);
-                }
-
-                if ($stmt->execute()) {
-                    $success = 'User updated successfully!';
-                } else {
-                    $error = 'Failed to update user. Please try again.';
-                }
-            }
-        }
+// Add this at the top of your users.php file to check DB connection
+function checkDatabaseConnection($conn) {
+    try {
+        $conn->query("SELECT 1");
+        return true;
+    } catch (PDOException $e) {
+        error_log("Database connection error: " . $e->getMessage());
+        return false;
     }
+}
+
+// Use it before performing database operations
+if (!checkDatabaseConnection($conn)) {
+    $_SESSION['error_message'] = "Database connection error. Please try again later.";
+}
+
+// Add at the top of your users.php file
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+// Process user form submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_user'])) {
+    $username = trim($_POST['username'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $role = $_POST['role'] ?? '';
+    $password = $_POST['password'] ?? '';
+    $confirm_password = $_POST['confirm_password'] ?? '';
+    
+    // Validate input
+    $errors = [];
+    
+    if (empty($username)) {
+        $errors[] = "Username is required";
+    }
+    
+    if (empty($email)) {
+        $errors[] = "Email is required";
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $errors[] = "Invalid email format";
+    }
+    
+    if (empty($role)) {
+        $errors[] = "Role is required";
+    }
+    
+    if (empty($password)) {
+        $errors[] = "Password is required";
+    }
+    
+    if ($password !== $confirm_password) {
+        $errors[] = "Passwords do not match";
+    }
+    
+    // Check if email already exists
+    try {
+        $stmt = $conn->prepare("SELECT id FROM users WHERE email = ?");
+        $stmt->execute([$email]);
+        if ($stmt->rowCount() > 0) {
+            $errors[] = "Email already exists";
+        }
+    } catch (PDOException $e) {
+        $errors[] = "Database error occurred";
+    }
+    
+    // If no errors, add user
+    if (empty($errors)) {
+        try {
+            $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+            
+            $stmt = $conn->prepare("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)");
+            $result = $stmt->execute([$username, $email, $hashed_password, $role]);
+            
+            if ($result) {
+                $_SESSION['success_message'] = "User added successfully!";
+            } else {
+                $_SESSION['error_message'] = "Failed to add user";
+            }
+        } catch (PDOException $e) {
+            $_SESSION['error_message'] = "Database error: " . $e->getMessage();
+        }
+    } else {
+        $_SESSION['error_message'] = implode("<br>", $errors);
+    }
+    
+    // Redirect to prevent form resubmission
+    header('Location: users.php');
+    exit();
 }
 
 // Fetch all users from the database
@@ -127,6 +151,25 @@ if (isset($_GET['edit_id'])) {
             0% { opacity: 0; transform: translateY(-10px); }
             100% { opacity: 1; transform: translateY(0); }
         }
+        /* Custom styles for notification */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 5px;
+            color: white;
+            z-index: 1000;
+            transition: all 0.3s ease;
+            animation: fadeInOut 5s forwards;
+        }
+        
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateY(-20px); }
+            10% { opacity: 1; transform: translateY(0); }
+            90% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(-20px); }
+        }
     </style>
 </head>
 <body class="bg-gray-900">
@@ -149,22 +192,20 @@ if (isset($_GET['edit_id'])) {
             </div>
             
             <!-- Display error or success messages -->
-            <?php if ($error): ?>
-                <div class="bg-red-500/20 border-l-4 border-red-500 p-4 mb-4 animate__animated animate__fadeIn">
-                    <div class="flex items-center">
-                        <i class="fas fa-exclamation-circle text-red-400 mr-2"></i>
-                        <p class="text-red-300"><?php echo $error; ?></p>
-                    </div>
+            <?php if (isset($_SESSION['success_message'])): ?>
+                <div class="bg-green-600 text-white px-4 py-3 rounded mb-4 flex justify-between items-center">
+                    <p><?php echo $_SESSION['success_message']; ?></p>
+                    <button type="button" onclick="this.parentElement.style.display='none'" class="text-white">&times;</button>
                 </div>
+                <?php unset($_SESSION['success_message']); ?>
             <?php endif; ?>
 
-            <?php if ($success): ?>
-                <div class="bg-green-500/20 border-l-4 border-green-500 p-4 mb-4 animate__animated animate__fadeIn">
-                    <div class="flex items-center">
-                        <i class="fas fa-check-circle text-green-400 mr-2"></i>
-                        <p class="text-green-300"><?php echo $success; ?></p>
-                    </div>
+            <?php if (isset($_SESSION['error_message'])): ?>
+                <div class="bg-red-600 text-white px-4 py-3 rounded mb-4 flex justify-between items-center">
+                    <p><?php echo $_SESSION['error_message']; ?></p>
+                    <button type="button" onclick="this.parentElement.style.display='none'" class="text-white">&times;</button>
                 </div>
+                <?php unset($_SESSION['error_message']); ?>
             <?php endif; ?>
             
             <!-- Users Table -->
@@ -218,43 +259,67 @@ if (isset($_GET['edit_id'])) {
     </main>
 
     <!-- Add User Modal -->
-    <div id="addUserModal" class="modal fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center">
-        <div class="modal-container bg-gray-800 w-full max-w-md mx-auto rounded-lg shadow-lg overflow-hidden">
-            <div class="py-4 px-6 bg-gray-700 flex justify-between items-center">
-                <h3 class="text-xl font-bold text-white">Add New User</h3>
-                <button class="text-gray-400 hover:text-white" onclick="closeModal('addUserModal')">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <form method="POST" class="p-6">
-                <input type="hidden" name="action" value="add">
+    <div id="addUserModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center">
+        <div class="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 class="text-xl font-bold text-white mb-4">Add New User</h3>
+            
+            <!-- Debug info - remove in production -->
+            <div id="formDebug" class="text-xs text-gray-400 mb-4 hidden">Form not submitted yet</div>
+            
+            <form method="POST" action="" id="addUserForm" autocomplete="off">
                 <div class="mb-4">
-                    <label for="user_name" class="block text-white mb-2">Name</label>
-                    <input type="text" id="user_name" name="user_name" class="w-full px-3 py-2 bg-gray-900 text-white rounded-lg border border-gray-700" required>
+                    <label for="username" class="block text-gray-300 mb-2">Username</label>
+                    <input type="text" name="username" id="username" placeholder="Enter username" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
                 </div>
                 <div class="mb-4">
-                    <label for="user_email" class="block text-white mb-2">Email</label>
-                    <input type="email" id="user_email" name="user_email" class="w-full px-3 py-2 bg-gray-900 text-white rounded-lg border border-gray-700" required>
+                    <label for="email" class="block text-gray-300 mb-2">Email</label>
+                    <input type="email" name="email" id="email" placeholder="Enter email address" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
                 </div>
                 <div class="mb-4">
-                    <label for="user_password" class="block text-white mb-2">Password</label>
-                    <input type="password" id="user_password" name="user_password" class="w-full px-3 py-2 bg-gray-900 text-white rounded-lg border border-gray-700" required>
-                </div>
-                <div class="mb-6">
-                    <label for="user_role" class="block text-white mb-2">Role</label>
-                    <select id="user_role" name="user_role" class="w-full px-3 py-2 bg-gray-900 text-white rounded-lg border border-gray-700" required>
+                    <label for="role" class="block text-gray-300 mb-2">Role</label>
+                    <select name="role" id="role" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
+                        <option value="">Select Role</option>
                         <option value="Admin">Admin</option>
                         <option value="Nurse">Nurse</option>
                     </select>
                 </div>
-                <div class="flex justify-end space-x-3">
-                    <button type="button" class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700" onclick="closeModal('addUserModal')">Cancel</button>
-                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add User</button>
+                <div class="mb-4">
+                    <label for="password" class="block text-gray-300 mb-2">Password</label>
+                    <div class="relative">
+                        <input type="password" name="password" id="password" placeholder="Enter password" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg pr-10" required>
+                        <button type="button" class="toggle-password absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label for="confirm_password" class="block text-gray-300 mb-2">Confirm Password</label>
+                    <div class="relative">
+                        <input type="password" name="confirm_password" id="confirm_password" placeholder="Confirm password" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg pr-10" required>
+                        <button type="button" class="toggle-password absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-4">
+                    <button type="button" onclick="closeModal('addUserModal')" class="px-4 py-2 text-gray-300 hover:text-white">
+                        Cancel
+                    </button>
+                    <button type="submit" name="add_user" id="submitUserBtn" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        Add User
+                    </button>
                 </div>
             </form>
         </div>
     </div>
 
+           
     <!-- Edit User Modal -->
     <div id="editUserModal" class="modal fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center">
         <div class="modal-container bg-gray-800 w-full max-w-md mx-auto rounded-lg shadow-lg overflow-hidden">
@@ -313,20 +378,39 @@ if (isset($_GET['edit_id'])) {
         </div>
     </div>
 
+    <!-- Success/Error Notification -->
+    <?php if (isset($_SESSION['success_message'])): ?>
+        <div id="successNotification" class="notification bg-green-500">
+            <?php 
+                echo $_SESSION['success_message']; 
+                unset($_SESSION['success_message']);
+            ?>
+        </div>
+    <?php endif; ?>
+    
+    <?php if (isset($_SESSION['error_message'])): ?>
+        <div id="errorNotification" class="notification bg-red-500">
+            <?php 
+                echo $_SESSION['error_message']; 
+                unset($_SESSION['error_message']);
+            ?>
+        </div>
+    <?php endif; ?>
+
     <script>
         let userIdToDelete = null;
 
         // Modal functions
         function openModal(modalId) {
             document.getElementById(modalId).classList.remove('hidden');
-            document.getElementById(modalId).classList.add('modal-active');
-            document.body.classList.add('overflow-hidden');
+            document.getElementById(modalId).classList.add('flex');
+            console.log('Modal opened:', modalId);
         }
 
         function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('flex');
             document.getElementById(modalId).classList.add('hidden');
-            document.getElementById(modalId).classList.remove('modal-active');
-            document.body.classList.remove('overflow-hidden');
+            console.log('Form reset for:', modalId);
         }
 
         // Edit user function
@@ -383,6 +467,82 @@ if (isset($_GET['edit_id'])) {
                 );
             <?php endif; ?>
         });
+
+        // Replace your existing password toggle code with this more reliable version
+        document.addEventListener('DOMContentLoaded', function() {
+            // Function to handle password toggle
+            function setupPasswordToggles() {
+                document.querySelectorAll('.password-field').forEach(function(field) {
+                    const input = field.querySelector('input');
+                    const toggleBtn = field.querySelector('.toggle-password');
+                    
+                    if (input && toggleBtn) {
+                        toggleBtn.addEventListener('click', function() {
+                            // Toggle between password and text
+                            const type = input.getAttribute('type') === 'password' ? 'text' : 'password';
+                            input.setAttribute('type', type);
+                            
+                            // Update icon based on password visibility
+                            if (type === 'text') {
+                                this.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                                </svg>`;
+                            } else {
+                                this.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>`;
+                            }
+                        });
+                    }
+                });
+            }
+            
+            // Initial setup
+            setupPasswordToggles();
+            
+            // Setup again when modals open (for dynamic content)
+            document.querySelectorAll('[data-target]').forEach(function(trigger) {
+                trigger.addEventListener('click', function() {
+                    setTimeout(setupPasswordToggles, 100);
+                });
+            });
+        });
+
+        // Add this to your JavaScript to ensure form resets properly
+        function resetModalForm(modalId) {
+            const form = document.querySelector(`#${modalId} form`);
+            if (form) {
+                form.reset();
+                
+                // Reset any validation messages
+                const errorMessages = form.querySelectorAll('.error-message');
+                errorMessages.forEach(message => {
+                    message.textContent = '';
+                    message.classList.add('hidden');
+                });
+                
+                // Reset any highlighted fields
+                const inputFields = form.querySelectorAll('input, select');
+                inputFields.forEach(field => {
+                    field.classList.remove('border-red-500');
+                });
+            }
+        }
+
+        // Use this when opening modals
+        document.querySelectorAll('[data-target]').forEach(button => {
+            button.addEventListener('click', function() {
+                const modalId = this.getAttribute('data-target');
+                resetModalForm(modalId);
+                openModal(modalId);
+            });
+        });
+
+        // Add this to your JavaScript for debugging
+        console.log('Modal opened:', modalId);
+        console.log('Form reset for:', modalId);
+        console.log('Toggle password clicked');
     </script>
 </body>
 </html>

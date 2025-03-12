@@ -10,7 +10,7 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'Admin') {
 }
 
 // Database connection
-require_once ROOT_PATH . 'backend/db.php';
+require_once '../backend/db.php';
 
 // Initialize variables
 $error = '';
@@ -75,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <?php endif; ?>
 
                 <!-- Add User Form -->
-                <form method="POST" class="bg-gray-700 p-6 rounded-lg mb-6">
+                <form method="POST" action="process_user.php" id="addUserForm" autocomplete="off" class="bg-gray-700 p-6 rounded-lg mb-6">
                     <div class="mb-4">
                         <label for="user_name" class="block text-white mb-2">Name</label>
                         <input type="text" id="user_name" name="user_name" class="w-full px-3 py-2 bg-gray-800 text-white rounded-lg" required>
