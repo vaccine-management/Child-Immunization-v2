@@ -125,6 +125,11 @@ if (isset($_GET['edit_id'])) {
     $stmt->execute([$userId]);
     $edit_user = $stmt->fetch(PDO::FETCH_ASSOC);
 }
+
+// For testing purposes, always set messages
+if (!isset($_GET['test'])) {
+    $_SESSION['success_message'] = "User added successfully! " . time();
+}
 ?>
 
 <!DOCTYPE html>
@@ -170,6 +175,59 @@ if (isset($_GET['edit_id'])) {
             90% { opacity: 1; transform: translateY(0); }
             100% { opacity: 0; transform: translateY(-20px); }
         }
+        /* Styles for alert messages */
+        .alert-message {
+            transition: opacity 0.5s ease-in-out;
+            opacity: 1;
+        }
+        
+        .alert-message.fade-out {
+            opacity: 0;
+        }
+        /* Alert animation */
+        .auto-dismiss-alert {
+            animation: fadeInOut 3s forwards;
+            opacity: 1;
+            position: relative;
+        }
+        
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateY(-20px); }
+            10% { opacity: 1; transform: translateY(0); }
+            90% { opacity: 1; }
+            100% { opacity: 0; visibility: hidden; }
+        }
+        /* Base alert styles */
+        .auto-dismiss-alert {
+            opacity: 1;
+            position: relative;
+        }
+        
+        /* Success alert - quick 2 second animation */
+        .success-alert {
+            animation: quickFadeOut 2s forwards;
+        }
+        
+        /* Error alert - 5 second animation */
+        .error-alert {
+            animation: slowFadeOut 5s forwards;
+        }
+        
+        /* Quick fade animation for success messages */
+        @keyframes quickFadeOut {
+            0% { opacity: 0; transform: translateY(-20px); }
+            20% { opacity: 1; transform: translateY(0); }
+            80% { opacity: 1; }
+            100% { opacity: 0; visibility: hidden; }
+        }
+        
+        /* Slow fade animation for error messages */
+        @keyframes slowFadeOut {
+            0% { opacity: 0; transform: translateY(-20px); }
+            10% { opacity: 1; transform: translateY(0); }
+            90% { opacity: 1; }
+            100% { opacity: 0; visibility: hidden; }
+        }
     </style>
 </head>
 <body class="bg-gray-900">
@@ -193,17 +251,39 @@ if (isset($_GET['edit_id'])) {
             
             <!-- Display error or success messages -->
             <?php if (isset($_SESSION['success_message'])): ?>
-                <div class="bg-green-600 text-white px-4 py-3 rounded mb-4 flex justify-between items-center">
-                    <p><?php echo $_SESSION['success_message']; ?></p>
-                    <button type="button" onclick="this.parentElement.style.display='none'" class="text-white">&times;</button>
+                <div id="successAlert" class="auto-dismiss-alert success-alert bg-green-600 text-white px-4 py-3 rounded mb-4 shadow-lg">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                            <p><?php echo $_SESSION['success_message']; ?></p>
+                        </div>
+                        <button onclick="dismissAlert('successAlert')" class="text-white hover:text-gray-100">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
                 <?php unset($_SESSION['success_message']); ?>
             <?php endif; ?>
 
             <?php if (isset($_SESSION['error_message'])): ?>
-                <div class="bg-red-600 text-white px-4 py-3 rounded mb-4 flex justify-between items-center">
-                    <p><?php echo $_SESSION['error_message']; ?></p>
-                    <button type="button" onclick="this.parentElement.style.display='none'" class="text-white">&times;</button>
+                <div id="errorAlert" class="auto-dismiss-alert error-alert bg-red-600 text-white px-4 py-3 rounded mb-4 shadow-lg">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <p><?php echo $_SESSION['error_message']; ?></p>
+                        </div>
+                        <button onclick="dismissAlert('errorAlert')" class="text-white hover:text-gray-100">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
                 <?php unset($_SESSION['error_message']); ?>
             <?php endif; ?>
@@ -543,6 +623,39 @@ if (isset($_GET['edit_id'])) {
         console.log('Modal opened:', modalId);
         console.log('Form reset for:', modalId);
         console.log('Toggle password clicked');
+
+        // Auto-dismiss alerts with different timings
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get all alerts
+            const successAlerts = document.querySelectorAll('.success-alert');
+            const errorAlerts = document.querySelectorAll('.error-alert');
+            
+            // Handle success alerts (2 seconds)
+            successAlerts.forEach(function(alert) {
+                setTimeout(function() {
+                    alert.style.display = 'none';
+                }, 2000); // 2 seconds for success alerts
+            });
+            
+            // Handle error alerts (5 seconds)
+            errorAlerts.forEach(function(alert) {
+                setTimeout(function() {
+                    alert.style.display = 'none';
+                }, 5000); // 5 seconds for error alerts
+            });
+        });
+
+        // Function to dismiss an alert manually
+        function dismissAlert(alertId) {
+            const alert = document.getElementById(alertId);
+            if (alert) {
+                alert.style.opacity = '0';
+                alert.style.visibility = 'hidden';
+                setTimeout(() => {
+                    alert.style.display = 'none';
+                }, 300);
+            }
+        }
     </script>
 </body>
 </html>
