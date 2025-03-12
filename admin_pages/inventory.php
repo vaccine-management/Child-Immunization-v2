@@ -3,6 +3,8 @@
 define('ROOT_PATH', dirname(__FILE__) . '/../');
 
 session_start();
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
 
 // Include the auth check file
 require_once ROOT_PATH . 'includes/auth_check.php';
@@ -15,39 +17,137 @@ require_once ROOT_PATH . 'backend/db.php';
 // Include the vaccine helper functions
 require_once ROOT_PATH . 'backend/vaccine_helpers.php';
 
+// Debugging function
+function debug_log($message, $data = null) {
+    error_log($message . ($data ? ': ' . print_r($data, true) : ''));
+}
+
+// Log form submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    debug_log('POST data received', $_POST);
+}
+
+// Test database connection
+try {
+    $testQuery = $conn->query("SELECT 1");
+    debug_log('Database connection test successful');
+} catch (PDOException $e) {
+    debug_log('Database connection test failed', $e->getMessage());
+    die("Database connection error: " . $e->getMessage());
+}
+
 // Fetch all vaccines for the dropdown
 $vaccines = getAllVaccines();
 
 // Handle form submissions for CRUD operations
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['add'])) {
-        // Add new inventory item
-        $vaccine_id = $_POST['vaccine_id'];
-        $batch_number = $_POST['batch_number'];
-        $quantity = $_POST['quantity'];
-        $expiry_date = $_POST['expiry_date'];
-
-        // Check if the item already exists in the inventory
-        $stmt = $conn->prepare("SELECT id, quantity FROM inventory WHERE vaccine_id = ? AND batch_number = ?");
-        $stmt->execute([$vaccine_id, $batch_number]);
-        $existing_item = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($existing_item) {
-            // Item exists, update the quantity
-            $new_quantity = $existing_item['quantity'] + $quantity;
-            $update_stmt = $conn->prepare("UPDATE inventory SET quantity = ?, expiry_date = ? WHERE id = ?");
-            $result = $update_stmt->execute([$new_quantity, $expiry_date, $existing_item['id']]);
-        } else {
-            // Item does not exist, add it to the inventory
-            $insert_stmt = $conn->prepare("INSERT INTO inventory (vaccine_id, batch_number, quantity, expiry_date) VALUES (?, ?, ?, ?)");
-            $result = $insert_stmt->execute([$vaccine_id, $batch_number, $quantity, $expiry_date]);
+        debug_log('Processing add item form');
+        
+        // Get and sanitize input
+        $vaccine_name = trim($_POST['vaccine_name'] ?? '');
+        $batch_number = trim($_POST['batch_number'] ?? '');
+        $quantity = filter_var($_POST['quantity'] ?? 0, FILTER_VALIDATE_INT);
+        $expiry_date = trim($_POST['expiry_date'] ?? '');
+        
+        debug_log('Form data', [
+            'vaccine_name' => $vaccine_name,
+            'batch_number' => $batch_number,
+            'quantity' => $quantity,
+            'expiry_date' => $expiry_date
+        ]);
+        
+        // Validate input
+        $errors = [];
+        
+        if (empty($vaccine_name)) {
+            $errors[] = "Vaccine name is required";
         }
-
-        if ($result) {
-            $successMessage = "Inventory item added/updated successfully!";
-        } else {
-            $errorMessage = "Failed to add/update inventory item.";
+        
+        if (empty($batch_number)) {
+            $errors[] = "Batch number is required";
         }
+        
+        if ($quantity <= 0) {
+            $errors[] = "Quantity must be greater than zero";
+        }
+        
+        if (empty($expiry_date)) {
+            $errors[] = "Expiry date is required";
+        } elseif (strtotime($expiry_date) === false) {
+            $errors[] = "Invalid expiry date format";
+        }
+        
+        debug_log('Validation errors', $errors);
+        
+        // If no errors, add inventory item
+        if (empty($errors)) {
+            try {
+                // Check database connection
+                if (!$conn) {
+                    throw new Exception("Database connection not established");
+                }
+                
+                debug_log('Database connection successful');
+                
+                // Begin transaction
+                $conn->beginTransaction();
+                
+                // First check if the vaccine exists
+                $stmt = $conn->prepare("SELECT id FROM vaccines WHERE name = ?");
+                $stmt->execute([$vaccine_name]);
+                $vaccine = $stmt->fetch(PDO::FETCH_ASSOC);
+                
+                debug_log('Vaccine check result', $vaccine);
+                
+                // If vaccine doesn't exist, add it
+                if (!$vaccine) {
+                    debug_log('Adding new vaccine');
+                    $stmt = $conn->prepare("INSERT INTO vaccines (name) VALUES (?)");
+                    $result = $stmt->execute([$vaccine_name]);
+                    
+                    if (!$result) {
+                        throw new Exception("Failed to add vaccine: " . implode(", ", $stmt->errorInfo()));
+                    }
+                    
+                    $vaccine_id = $conn->lastInsertId();
+                    debug_log('New vaccine ID', $vaccine_id);
+                } else {
+                    $vaccine_id = $vaccine['id'];
+                    debug_log('Using existing vaccine ID', $vaccine_id);
+                }
+                
+                // Now add the inventory item
+                debug_log('Adding inventory item');
+                $stmt = $conn->prepare("INSERT INTO inventory (vaccine_id, batch_number, quantity, expiry_date) 
+                                       VALUES (?, ?, ?, ?)");
+                $result = $stmt->execute([$vaccine_id, $batch_number, $quantity, $expiry_date]);
+                
+                if (!$result) {
+                    throw new Exception("Failed to add inventory: " . implode(", ", $stmt->errorInfo()));
+                }
+                
+                // Commit transaction
+                $conn->commit();
+                
+                debug_log('Inventory item added successfully');
+                $_SESSION['inventory_success'] = "Added {$quantity} doses of {$vaccine_name} (Batch: {$batch_number}) to inventory!";
+            } catch (Exception $e) {
+                // Rollback transaction on error
+                if ($conn->inTransaction()) {
+                    $conn->rollBack();
+                }
+                
+                debug_log('Error adding inventory item', $e->getMessage());
+                $_SESSION['inventory_error'] = "Error: " . $e->getMessage();
+            }
+        } else {
+            $_SESSION['inventory_error'] = implode("<br>", $errors);
+        }
+        
+        // Redirect to prevent form resubmission
+        header('Location: inventory.php');
+        exit();
     } elseif (isset($_POST['update'])) {
         // Update inventory item
         $id = $_POST['id'];
@@ -57,10 +157,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $result = updateInventoryQuantity($id, $quantity);
         
         if ($result) {
-            $successMessage = "Inventory updated successfully!";
+            $_SESSION['inventory_success'] = "Inventory updated successfully!";
         } else {
-            $errorMessage = "Failed to update inventory.";
+            $_SESSION['inventory_error'] = "Failed to update inventory.";
         }
+        
+        header('Location: admin_pages/inventory.php');
+        exit();
     } elseif (isset($_POST['delete'])) {
         // Delete inventory item
         $id = $_POST['id'];
@@ -69,10 +172,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $result = deleteInventoryItem($id);
         
         if ($result) {
-            $successMessage = "Inventory item deleted successfully!";
+            $_SESSION['inventory_success'] = "Inventory item removed successfully!";
         } else {
-            $errorMessage = "Failed to delete inventory item.";
+            $_SESSION['inventory_error'] = "Failed to delete inventory item.";
         }
+        
+        header('Location: admin_pages/inventory.php');
+        exit();
     }
 }
 
@@ -91,6 +197,39 @@ $inventory_items = getAllInventory();
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
     <link rel="stylesheet" href="../css/styles.css">
+    <style>
+        /* Base alert styles */
+        .auto-dismiss-alert {
+            opacity: 1;
+            position: relative;
+        }
+        
+        /* Success alert - 2 second animation */
+        .success-alert {
+            animation: quickFadeOut 2s forwards;
+        }
+        
+        /* Error alert - 5 second animation */
+        .error-alert {
+            animation: slowFadeOut 5s forwards;
+        }
+        
+        /* Quick fade animation for success messages */
+        @keyframes quickFadeOut {
+            0% { opacity: 0; transform: translateY(-20px); }
+            20% { opacity: 1; transform: translateY(0); }
+            80% { opacity: 1; }
+            100% { opacity: 0; visibility: hidden; }
+        }
+        
+        /* Slow fade animation for error messages */
+        @keyframes slowFadeOut {
+            0% { opacity: 0; transform: translateY(-20px); }
+            10% { opacity: 1; transform: translateY(0); }
+            90% { opacity: 1; }
+            100% { opacity: 0; visibility: hidden; }
+        }
+    </style>
 </head>
 <body class="bg-gray-900">
     <?php require_once ROOT_PATH . 'includes/header.php'; ?>
@@ -99,7 +238,47 @@ $inventory_items = getAllInventory();
 
     <!-- Main Content -->
     <main id="main-content" class="lg:ml-64 ml-0 pt-16 min-h-screen bg-gray-900 transition-all duration-300 ease-in-out">
-        <div class="p-4 sm:p-6 lg:p-8">
+        <div class="container mx-auto px-4 py-8">
+            <!-- Success message -->
+            <?php if (isset($_SESSION['inventory_success'])): ?>
+                <div id="successAlert" class="auto-dismiss-alert success-alert bg-green-600 text-white px-4 py-3 rounded mb-4 shadow-lg">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                            <p><?php echo $_SESSION['inventory_success']; ?></p>
+                        </div>
+                        <button onclick="dismissAlert('successAlert')" class="text-white hover:text-gray-100">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <?php unset($_SESSION['inventory_success']); ?>
+            <?php endif; ?>
+
+            <!-- Error message -->
+            <?php if (isset($_SESSION['inventory_error'])): ?>
+                <div id="errorAlert" class="auto-dismiss-alert error-alert bg-red-600 text-white px-4 py-3 rounded mb-4 shadow-lg">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <p><?php echo $_SESSION['inventory_error']; ?></p>
+                        </div>
+                        <button onclick="dismissAlert('errorAlert')" class="text-white hover:text-gray-100">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <?php unset($_SESSION['inventory_error']); ?>
+            <?php endif; ?>
+            
             <!-- Page Header -->
             <div class="mb-6 flex justify-between items-center">
                 <div>
@@ -160,23 +339,18 @@ $inventory_items = getAllInventory();
     <div id="addModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center">
         <div class="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
             <h3 class="text-xl font-bold text-white mb-4">Add New Item</h3>
-            <form method="POST" action="">
+            <form method="POST" action="" id="addInventoryForm">
                 <div class="mb-4">
-                    <label for="vaccine_id" class="block text-gray-300 mb-2">Vaccine</label>
-                    <select name="vaccine_id" id="vaccine_id" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
-                        <option value="">Select Vaccine</option>
-                        <?php foreach ($vaccines as $vaccine): ?>
-                            <option value="<?php echo $vaccine['id']; ?>"><?php echo htmlspecialchars($vaccine['name']); ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                    <label for="vaccine_name" class="block text-gray-300 mb-2">Vaccine Name</label>
+                    <input type="text" name="vaccine_name" id="vaccine_name" placeholder="Enter vaccine name" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
                 </div>
                 <div class="mb-4">
                     <label for="batch_number" class="block text-gray-300 mb-2">Batch Number</label>
-                    <input type="text" name="batch_number" id="batch_number" placeholder="BSYTE7364"class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
+                    <input type="text" name="batch_number" id="batch_number" placeholder="Enter batch number" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
                 </div>
                 <div class="mb-4">
-                    <label for="quantity" placeholder="10" class="block text-gray-300 mb-2">Quantity</label>
-                    <input type="number" name="quantity" id="quantity" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
+                    <label for="quantity" class="block text-gray-300 mb-2">Quantity</label>
+                    <input type="number" name="quantity" id="quantity" placeholder="Enter quantity" min="1" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg" required>
                 </div>
                 <div class="mb-4">
                     <label for="expiry_date" class="block text-gray-300 mb-2">Expiry Date</label>
@@ -187,7 +361,7 @@ $inventory_items = getAllInventory();
                         Cancel
                     </button>
                     <button type="submit" name="add" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                        Add
+                        Add Item
                     </button>
                 </div>
             </form>
@@ -255,6 +429,65 @@ $inventory_items = getAllInventory();
             document.getElementById('edit_quantity').value = quantity;
             openModal('editModal');
         }
+
+        // Function to dismiss an alert manually
+        function dismissAlert(alertId) {
+            const alert = document.getElementById(alertId);
+            if (alert) {
+                alert.style.opacity = '0';
+                alert.style.visibility = 'hidden';
+                setTimeout(() => {
+                    alert.style.display = 'none';
+                }, 300);
+            }
+        }
+
+        // Auto-dismiss alerts with different timings
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get all alerts
+            const successAlerts = document.querySelectorAll('.success-alert');
+            const errorAlerts = document.querySelectorAll('.error-alert');
+            
+            // Handle success alerts (2 seconds)
+            successAlerts.forEach(function(alert) {
+                setTimeout(function() {
+                    alert.style.display = 'none';
+                }, 2000); // 2 seconds for success alerts
+            });
+            
+            // Handle error alerts (5 seconds)
+            errorAlerts.forEach(function(alert) {
+                setTimeout(function() {
+                    alert.style.display = 'none';
+                }, 5000); // 5 seconds for error alerts
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const inventoryForm = document.getElementById('addInventoryForm');
+            if (inventoryForm) {
+                inventoryForm.addEventListener('submit', function(e) {
+                    console.log('Form submission triggered');
+                    
+                    // Validate form data
+                    const vaccine_name = document.getElementById('vaccine_name').value.trim();
+                    const batch_number = document.getElementById('batch_number').value.trim();
+                    const quantity = document.getElementById('quantity').value;
+                    const expiry_date = document.getElementById('expiry_date').value;
+                    
+                    console.log('Form data:', {
+                        vaccine_name,
+                        batch_number,
+                        quantity,
+                        expiry_date
+                    });
+                    
+                    // Let form submit normally
+                });
+            } else {
+                console.error('Inventory form not found');
+            }
+        });
     </script>
 </body>
 </html>
