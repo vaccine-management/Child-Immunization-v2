@@ -634,7 +634,7 @@ if (!isset($_GET['test'])) {
             successAlerts.forEach(function(alert) {
                 setTimeout(function() {
                     alert.style.display = 'none';
-                }, 2000); // 2 seconds for success alerts
+                }, 4000); // 2 seconds for success alerts
             });
             
             // Handle error alerts (5 seconds)
