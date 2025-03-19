@@ -92,7 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_user'])) {
             $result = $stmt->execute([$username, $email, $hashed_password, $role]);
             
             if ($result) {
-                $_SESSION['success_message'] = "User added successfully!";
+                $_SESSION['success_message'] = "User '" . $username . "' added successfully!";
             } else {
                 $_SESSION['error_message'] = "Failed to add user";
             }
@@ -126,10 +126,6 @@ if (isset($_GET['edit_id'])) {
     $edit_user = $stmt->fetch(PDO::FETCH_ASSOC);
 }
 
-// For testing purposes, always set messages
-if (!isset($_GET['test'])) {
-    $_SESSION['success_message'] = "User added successfully! " . time();
-}
 ?>
 
 <!DOCTYPE html>
@@ -166,14 +162,14 @@ if (!isset($_GET['test'])) {
             color: white;
             z-index: 1000;
             transition: all 0.3s ease;
-            animation: fadeInOut 5s forwards;
+            animation: fadeInOut 4s forwards;
         }
         
         @keyframes fadeInOut {
             0% { opacity: 0; transform: translateY(-20px); }
             10% { opacity: 1; transform: translateY(0); }
             90% { opacity: 1; transform: translateY(0); }
-            100% { opacity: 0; transform: translateY(-20px); }
+            100% { opacity: 0; transform: translateY(-20px); display: none; }
         }
         /* Styles for alert messages */
         .alert-message {
@@ -186,7 +182,7 @@ if (!isset($_GET['test'])) {
         }
         /* Alert animation */
         .auto-dismiss-alert {
-            animation: fadeInOut 3s forwards;
+            animation: fadeInOut 4s forwards;
             opacity: 1;
             position: relative;
         }
@@ -308,7 +304,7 @@ if (!isset($_GET['test'])) {
                             </tr>
                         <?php else: ?>
                             <?php foreach ($users as $user): ?>
-                                <tr>
+                                <tr id="user-row-<?php echo $user['id']; ?>">
                                     <td class="px-4 py-3 text-sm text-gray-300"><?php echo $user['id']; ?></td>
                                     <td class="px-4 py-3 text-sm text-gray-300"><?php echo htmlspecialchars($user['username']); ?></td>
                                     <td class="px-4 py-3 text-sm text-gray-300"><?php echo htmlspecialchars($user['email']); ?></td>
@@ -520,7 +516,79 @@ if (!isset($_GET['test'])) {
 
         function confirmDelete() {
             if (userIdToDelete) {
-                window.location.href = `delete_user.php?id=${userIdToDelete}`;
+                // Use AJAX to call delete_user.php instead of redirecting
+                fetch(`delete_user.php?id=${userIdToDelete}`, {
+                    method: 'GET'
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Close the delete modal
+                    closeModal('deleteModal');
+                    
+                    // Show success or error message
+                    if (data.success) {
+                        // Create success notification
+                        const notification = document.createElement('div');
+                        notification.id = 'successNotification';
+                        notification.className = 'notification bg-green-500';
+                        notification.textContent = data.message;
+                        document.body.appendChild(notification);
+                        
+                        // Remove notification after animation completes (4 seconds)
+                        setTimeout(() => {
+                            if (notification && notification.parentNode) {
+                                notification.parentNode.removeChild(notification);
+                            }
+                        }, 4000);
+                        
+                        // Remove the user row from the table
+                        const userRow = document.getElementById(`user-row-${userIdToDelete}`);
+                        if (userRow) {
+                            userRow.remove();
+                        }
+                    } else {
+                        // Create error notification
+                        const notification = document.createElement('div');
+                        notification.id = 'errorNotification';
+                        notification.className = 'notification bg-red-500';
+                        notification.textContent = data.message;
+                        document.body.appendChild(notification);
+                        
+                        // Remove notification after animation completes (4 seconds)
+                        setTimeout(() => {
+                            if (notification && notification.parentNode) {
+                                notification.parentNode.removeChild(notification);
+                            }
+                        }, 4000);
+                    }
+                    
+                    // The fadeInOut animation will automatically handle the appearance and disappearance
+                    // No need for setTimeout as the CSS animation will take care of it
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    // Show error notification
+                    const notification = document.createElement('div');
+                    notification.id = 'errorNotification';
+                    notification.className = 'notification bg-red-500';
+                    notification.textContent = 'An error occurred while deleting the user.';
+                    document.body.appendChild(notification);
+                    
+                    // Remove notification after animation completes (4 seconds)
+                    setTimeout(() => {
+                        if (notification && notification.parentNode) {
+                            notification.parentNode.removeChild(notification);
+                        }
+                    }, 4000);
+                    
+                    // Close the delete modal
+                    closeModal('deleteModal');
+                });
             }
         }
 
@@ -565,7 +633,7 @@ if (!isset($_GET['test'])) {
                             // Update icon based on password visibility
                             if (type === 'text') {
                                 this.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
                                 </svg>`;
                             } else {
                                 this.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -619,29 +687,16 @@ if (!isset($_GET['test'])) {
             });
         });
 
-        // Add this to your JavaScript for debugging
-        console.log('Modal opened:', modalId);
-        console.log('Form reset for:', modalId);
-        console.log('Toggle password clicked');
-
-        // Auto-dismiss alerts with different timings
+        // Auto-dismiss alerts with consistent timing
         document.addEventListener('DOMContentLoaded', function() {
             // Get all alerts
-            const successAlerts = document.querySelectorAll('.success-alert');
-            const errorAlerts = document.querySelectorAll('.error-alert');
+            const alerts = document.querySelectorAll('.auto-dismiss-alert');
             
-            // Handle success alerts (2 seconds)
-            successAlerts.forEach(function(alert) {
+            // Handle alerts with consistent timing
+            alerts.forEach(function(alert) {
                 setTimeout(function() {
                     alert.style.display = 'none';
-                }, 4000); // 2 seconds for success alerts
-            });
-            
-            // Handle error alerts (5 seconds)
-            errorAlerts.forEach(function(alert) {
-                setTimeout(function() {
-                    alert.style.display = 'none';
-                }, 5000); // 5 seconds for error alerts
+                }, 4000); // 4 seconds for all alerts
             });
         });
 

@@ -13,10 +13,16 @@ checkAdminRole();
 // Include the database connection file
 require_once ROOT_PATH . 'backend/db.php';
 
+// Prepare response array
+$response = [
+    'success' => false,
+    'message' => ''
+];
+
 // Check if an ID was provided
 if (!isset($_GET['id']) || empty($_GET['id'])) {
-    $_SESSION['error_message'] = "No user ID specified for deletion.";
-    header("Location: users.php");
+    $response['message'] = "No user ID specified for deletion.";
+    echo json_encode($response);
     exit();
 }
 
@@ -24,8 +30,8 @@ $userId = $_GET['id'];
 
 // Don't allow deletion of the current user
 if ($_SESSION['user']['id'] == $userId) {
-    $_SESSION['error_message'] = "You cannot delete your own account.";
-    header("Location: users.php");
+    $response['message'] = "You cannot delete your own account.";
+    echo json_encode($response);
     exit();
 }
 
@@ -36,8 +42,8 @@ try {
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
     
     if (!$user) {
-        $_SESSION['error_message'] = "User not found.";
-        header("Location: users.php");
+        $response['message'] = "User not found.";
+        echo json_encode($response);
         exit();
     }
     
@@ -46,16 +52,18 @@ try {
     $deleteStmt->execute([$userId]);
     
     if ($deleteStmt->rowCount() > 0) {
-        $_SESSION['success_message'] = "User '" . $user['username'] . "' has been deleted successfully.";
+        $response['success'] = true;
+        $response['message'] = "User '" . $user['username'] . "' has been deleted successfully.";
     } else {
-        $_SESSION['error_message'] = "Failed to delete user.";
+        $response['message'] = "Failed to delete user.";
     }
     
 } catch (PDOException $e) {
-    $_SESSION['error_message'] = "Database error: " . $e->getMessage();
+    $response['message'] = "Database error: " . $e->getMessage();
 }
 
-// Redirect back to users page
-header("Location: users.php");
+// Return JSON response
+header('Content-Type: application/json');
+echo json_encode($response);
 exit();
-?> 
+?>
