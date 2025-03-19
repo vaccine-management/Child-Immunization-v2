@@ -162,7 +162,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['inventory_error'] = "Failed to update inventory.";
         }
         
-        header('Location: admin_pages/inventory.php');
+        header('Location: inventory.php');
         exit();
     } elseif (isset($_POST['delete'])) {
         // Delete inventory item
@@ -177,7 +177,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['inventory_error'] = "Failed to delete inventory item.";
         }
         
-        header('Location: admin_pages/inventory.php');
+        header('Location: inventory.php');
         exit();
     }
 }
