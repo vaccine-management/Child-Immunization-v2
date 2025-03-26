@@ -64,9 +64,12 @@ if (!defined('DASHBOARD_INCLUDE')) {
                             $age = $interval->d . ' ' . ($interval->d == 1 ? 'day' : 'days');
                         }
                 ?>
-                <tr class="hover:bg-gray-700/50 transition duration-150">
+                <tr class="hover:bg-gray-700/50 transition duration-150 cursor-pointer" 
+                    onclick="window.location.href='child_profile.php?id=<?php echo htmlspecialchars($child['child_id']); ?>'">
                     <td class="px-4 py-3 text-sm text-white">
-                        <?php echo htmlspecialchars($child['full_name']); ?>
+                        <a href="child_profile.php?id=<?php echo htmlspecialchars($child['child_id']); ?>" class="hover:text-blue-400 transition-colors">
+                            <?php echo htmlspecialchars($child['full_name']); ?>
+                        </a>
                     </td>
                     <td class="px-4 py-3 text-sm text-gray-300 hidden sm:table-cell">
                         <?php echo $age; ?>

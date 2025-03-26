@@ -12,8 +12,11 @@ if (!defined('DASHBOARD_INCLUDE')) {
         <h2 class="text-lg font-semibold text-white mb-4">Vaccine Inventory</h2>
         <div class="space-y-4">
             <?php foreach($vaccineStock as $vaccine): 
-                $percentage = ($vaccine['quantity'] / 50) * 100; // Assuming max capacity is 50
+                // Calculate percentage - a good default max might be 100
+                $maxStock = 100;
+                $percentage = ($vaccine['quantity'] / $maxStock) * 100; 
                 $colorClass = 'bg-green-500';
+                
                 if ($percentage < 20) {
                     $colorClass = 'bg-red-500';
                 } elseif ($percentage < 40) {
@@ -32,7 +35,7 @@ if (!defined('DASHBOARD_INCLUDE')) {
             <?php endforeach; ?>
         </div>
         <div class="mt-6">
-            <a href="admin_pages\inventory.php" class="inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors duration-200">
+            <a href="admin_pages/inventory.php" class="inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors duration-200">
                 Manage Inventory
             </a>
         </div>

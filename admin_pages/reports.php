@@ -351,5 +351,5 @@ function generateReport(type) {
     window.location.href = `../generate_report.php?type=${type}`;
 }
 </script>
-
-<?php require_once ROOT_PATH . 'includes/footer.php'; ?>
+</body>
+</html>

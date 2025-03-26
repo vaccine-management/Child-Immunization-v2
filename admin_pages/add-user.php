@@ -10,7 +10,7 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'Admin') {
 }
 
 // Database connection
-require_once ROOT_PATH . 'backend/db.php';
+require_once '../backend/db.php';
 
 // Initialize variables
 $error = '';
@@ -33,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->bindParam(4, $userPassword);
 
         if ($stmt->execute()) {
-            $success = 'User added successfully!';
+            $success = "User '" . $userName . "' added successfully!";
         } else {
             $error = 'Failed to add user. Please try again.';
         }
@@ -49,6 +49,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../css/styles.css">
+    <style>
+        /* Custom styles for notification */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 5px;
+            color: white;
+            z-index: 1000;
+            transition: all 0.3s ease;
+            animation: fadeInOut 4s forwards;
+        }
+        
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateY(-20px); }
+            10% { opacity: 1; transform: translateY(0); }
+            90% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(-20px); }
+        }
+    </style>
 </head>
 <body class="bg-gray-900">
     <?php require_once ROOT_PATH . 'includes/header.php'; ?>
@@ -63,19 +84,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 <!-- Display error or success messages -->
                 <?php if ($error): ?>
-                    <div class="bg-red-500 text-white p-3 rounded-lg mb-4">
+                    <div class="notification bg-red-500">
                         <?php echo $error; ?>
                     </div>
                 <?php endif; ?>
 
                 <?php if ($success): ?>
-                    <div class="bg-green-500 text-white p-3 rounded-lg mb-4">
+                    <div class="notification bg-green-500">
                         <?php echo $success; ?>
                     </div>
                 <?php endif; ?>
 
                 <!-- Add User Form -->
-                <form method="POST" class="bg-gray-700 p-6 rounded-lg mb-6">
+                <form method="POST" action="process_user.php" id="addUserForm" autocomplete="off" class="bg-gray-700 p-6 rounded-lg mb-6">
                     <div class="mb-4">
                         <label for="user_name" class="block text-white mb-2">Name</label>
                         <input type="text" id="user_name" name="user_name" class="w-full px-3 py-2 bg-gray-800 text-white rounded-lg" required>
@@ -86,7 +107,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                     <div class="mb-4">
                         <label for="user_password" class="block text-white mb-2">Password</label>
-                        <input type="password" id="user_password" name="user_password" class="w-full px-3 py-2 bg-gray-800 text-white rounded-lg" required>
+                        <div class="relative group">
+                            <input type="password" id="user_password" name="user_password" class="w-full px-3 py-2 bg-gray-800 text-white rounded-lg pr-10" required>
+                            <button type="button" id="togglePassword" 
+                                    class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-blue-400 focus:outline-none transition-colors duration-200">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
                     </div>
                     <div class="mb-4">
                         <label for="user_role" class="block text-white mb-2">Role</label>
@@ -104,5 +131,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </div>
     </main>
+
+    <script>
+        // Function to handle password toggle
+        document.addEventListener('DOMContentLoaded', function() {
+            const togglePassword = document.getElementById('togglePassword');
+            const passwordInput = document.getElementById('user_password');
+            
+            if (togglePassword && passwordInput) {
+                togglePassword.addEventListener('click', function(e) {
+                    // Prevent form submission
+                    e.preventDefault();
+                    
+                    // Toggle between password and text
+                    if (passwordInput.type === 'password') {
+                        passwordInput.type = 'text';
+                        this.querySelector('i').classList.remove('fa-eye');
+                        this.querySelector('i').classList.add('fa-eye-slash');
+                    } else {
+                        passwordInput.type = 'password';
+                        this.querySelector('i').classList.remove('fa-eye-slash');
+                        this.querySelector('i').classList.add('fa-eye');
+                    }
+                });
+            }
+        });
+    </script>
 </body>
 </html>
