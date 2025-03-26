@@ -66,7 +66,7 @@ $userRole = strtolower($_SESSION['user']['role'] ?? 'nurse');
                             <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
                         <?php endif; ?>
                     </a>
-                        </li>
+                </li>
 
                 <!-- Admin-specific menu items -->
                 <?php if ($userRole === 'admin'): ?>
@@ -100,14 +100,14 @@ $userRole = strtolower($_SESSION['user']['role'] ?? 'nurse');
                     </a>
                 </li>
                 <li>
-                    <a href="<?php echo $baseUrl; ?>sms_dashboard.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
-                          <?php echo ($currentPage === 'sms_dashboard.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
+                    <a href="<?php echo $baseUrl; ?>admin_pages/sms-management.php" class="group flex items-center text-gray-300 hover:text-white py-2 px-3 rounded-lg hover:bg-gray-800/80
+                          <?php echo ($currentPage === 'sms-management.php') ? 'text-white bg-blue-500/10 hover:bg-blue-500/20' : ''; ?>">
                         <div class="w-8 h-8 flex items-center justify-center mr-3
-                            <?php echo ($currentPage === 'sms_dashboard.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
+                            <?php echo ($currentPage === 'sms-management.php') ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'; ?>">
                             <i class="fas fa-sms"></i>
                         </div>
-                        <span class="text-sm">SMS Notifications</span>
-                        <?php if ($currentPage === 'sms_dashboard.php'): ?>
+                        <span class="text-sm">SMS Management</span>
+                        <?php if ($currentPage === 'sms-management.php'): ?>
                             <span class="ml-auto w-1.5 h-6 rounded-sm bg-blue-400"></span>
                         <?php endif; ?>
                     </a>

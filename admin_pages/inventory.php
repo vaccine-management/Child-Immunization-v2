@@ -56,7 +56,7 @@ $inventory_items = $stmt->fetchAll(PDO::FETCH_ASSOC);
 </head>
 <body class="bg-gray-900">
     <?php require_once ROOT_PATH . 'includes/header.php'; ?>
-    <?php require_once ROOT_PATH . 'includes/navbar.php'; ?>
+   <?php require_once ROOT_PATH . 'includes/navbar.php'; ?>
     <?php require_once ROOT_PATH . 'includes/sidebar.php'; ?>
 
     <!-- Main Content -->

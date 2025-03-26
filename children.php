@@ -439,17 +439,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 }
                                 
                                 // Set success message based on SMS result
-                                if ($smsResult['status'] === 'success') {
+                                if (isset($smsResult['success']) && $smsResult['success']) {
+                                    $_SESSION['success'] = "Child successfully registered with ID: " . $childID . 
+                                        ". A detailed SMS with the vaccination schedule has been sent to " . $phone . ".";
+                                } else if (isset($smsResult['status']) && $smsResult['status'] === 'success') {
                                     $_SESSION['success'] = "Child successfully registered with ID: " . $childID . 
                                         ". A detailed SMS with the vaccination schedule has been sent to " . $phone . ".";
                                 } else {
                                     // Log the error but don't prevent registration
                                     error_log("Failed to send registration SMS for child {$childID}: " . json_encode($smsResult));
                                     
-                                    // Still show success for registration, but warn about SMS
-                                    $_SESSION['success'] = "Child successfully registered with ID: " . $childID . ".";
-                                    $_SESSION['warning'] = "SMS notification could not be sent: " . ($smsResult['message'] ?? 'Unknown error') . 
-                                        ". Please check that the SMS service is running and try again.";
+                                    // Check for specific error types
+                                    if (isset($smsResult['credentialIssues']) && !empty($smsResult['credentialIssues'])) {
+                                        // API credential configuration issue
+                                        $_SESSION['success'] = "Child successfully registered with ID: " . $childID . ".";
+                                        $_SESSION['error'] = "Africa's Talking API credentials are not properly configured. SMS notification was not sent. Please update the API credentials in the .env file.";
+                                    } else if (isset($smsResult['details']) && strpos($smsResult['details'], 'API credentials') !== false) {
+                                        // Authentication failed with API
+                                        $_SESSION['success'] = "Child successfully registered with ID: " . $childID . ".";
+                                        $_SESSION['error'] = "Authentication failed with Africa's Talking API. SMS notification was not sent. Please check your credentials in the .env file.";
+                                    } else if (isset($smsResult['details']) && strpos($smsResult['details'], 'SMS service') !== false) {
+                                        // SMS service not running
+                                        $_SESSION['success'] = "Child successfully registered with ID: " . $childID . ".";
+                                        $_SESSION['warning'] = "SMS notification could not be sent: SMS service is not running. Please start the SMS service.";
+                                    } else {
+                                        // Generic error
+                                        $_SESSION['success'] = "Child successfully registered with ID: " . $childID . ".";
+                                        $_SESSION['warning'] = "SMS notification could not be sent: " . 
+                                            (isset($smsResult['message']) ? $smsResult['message'] : 
+                                            (isset($smsResult['error']) ? $smsResult['error'] : 'Unknown error')) . 
+                                            ". Please check the SMS service logs for details.";
+                                    }
                                 }
                             } catch (Exception $e) {
                                 error_log("Exception while sending registration SMS for child {$childID}: " . $e->getMessage());
