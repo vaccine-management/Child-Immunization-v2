@@ -8,23 +8,31 @@ require_once 'db.php';
  */
 function getAllVaccines() {
     global $conn;
-    $stmt = $conn->prepare("SELECT * FROM vaccines ORDER BY name");
-    $stmt->execute();
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    try {
+        $stmt = $conn->query("SELECT * FROM vaccines ORDER BY name");
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        error_log("Error fetching vaccines: " . $e->getMessage());
+        return [];
+    }
 }
 
 /**
- * Get a vaccine by ID
+ * Get a single vaccine by ID
  * 
  * @param int $id Vaccine ID
  * @return array|false Vaccine record or false if not found
  */
 function getVaccineById($id) {
     global $conn;
-    $stmt = $conn->prepare("SELECT * FROM vaccines WHERE id = :id");
-    $stmt->bindParam(':id', $id, PDO::PARAM_INT);
-    $stmt->execute();
-    return $stmt->fetch(PDO::FETCH_ASSOC);
+    try {
+        $stmt = $conn->prepare("SELECT * FROM vaccines WHERE id = ?");
+        $stmt->execute([$id]);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        error_log("Error fetching vaccine: " . $e->getMessage());
+        return false;
+    }
 }
 
 /**
@@ -129,20 +137,22 @@ function getVaccineInventory($vaccineId) {
 }
 
 /**
- * Get all inventory items
+ * Get all inventory items (now using consolidated vaccines table)
  * 
- * @return array Array of inventory records with vaccine information
+ * @return array Array of vaccine records with inventory information
  */
 function getAllInventory() {
     global $conn;
-    $stmt = $conn->prepare("
-        SELECT i.*, v.name as vaccine_name 
-        FROM inventory i
-        JOIN vaccines v ON i.vaccine_id = v.id
-        ORDER BY i.expiry_date
-    ");
-    $stmt->execute();
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    try {
+        $stmt = $conn->query("
+            SELECT * FROM vaccines 
+            ORDER BY name, expiry_date
+        ");
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        error_log("Error fetching inventory: " . $e->getMessage());
+        return [];
+    }
 }
 
 /**
@@ -218,10 +228,9 @@ function getChildVaccinations($childId) {
             vac.name as vaccine_name,
             vac.target_disease,
             u.username as administered_by_name,
-            i.batch_number
+            vac.batch_number
         FROM vaccinations v
         JOIN vaccines vac ON v.vaccine_id = vac.id
-        JOIN inventory i ON v.inventory_id = i.id
         LEFT JOIN users u ON v.administered_by = u.id
         WHERE v.child_id = :child_id
         ORDER BY v.administered_date
@@ -279,7 +288,6 @@ function getChildUpcomingVaccinations($childId, $ageInDays) {
  * @param int $vaccineId Vaccine ID
  * @param int $doseNumber Dose number
  * @param int $appointmentId Appointment ID (optional)
- * @param int $inventoryId Inventory ID
  * @param string $administeredDate Administration date (YYYY-MM-DD)
  * @param int $administeredBy User ID who administered the vaccine
  * @param string $administrationSite Body site of administration
@@ -288,7 +296,7 @@ function getChildUpcomingVaccinations($childId, $ageInDays) {
  * @param string $status Status (Administered, Missed, Cancelled)
  * @return bool True if successful, false otherwise
  */
-function recordVaccination($childId, $vaccineId, $doseNumber, $appointmentId, $inventoryId, 
+function recordVaccination($childId, $vaccineId, $doseNumber, $appointmentId, 
                           $administeredDate, $administeredBy, $administrationSite, 
                           $notes, $sideEffects, $status = 'Administered') {
     global $conn;
@@ -300,11 +308,11 @@ function recordVaccination($childId, $vaccineId, $doseNumber, $appointmentId, $i
         // Insert vaccination record
         $stmt = $conn->prepare("
             INSERT INTO vaccinations (
-                child_id, vaccine_id, dose_number, appointment_id, inventory_id,
+                child_id, vaccine_id, dose_number, appointment_id,
                 administered_date, administered_by, administration_site,
                 notes, side_effects, status
             ) VALUES (
-                :child_id, :vaccine_id, :dose_number, :appointment_id, :inventory_id,
+                :child_id, :vaccine_id, :dose_number, :appointment_id,
                 :administered_date, :administered_by, :administration_site,
                 :notes, :side_effects, :status
             )
@@ -321,7 +329,6 @@ function recordVaccination($childId, $vaccineId, $doseNumber, $appointmentId, $i
             $stmt->bindValue(':appointment_id', null, PDO::PARAM_NULL);
         }
         
-        $stmt->bindParam(':inventory_id', $inventoryId, PDO::PARAM_INT);
         $stmt->bindParam(':administered_date', $administeredDate, PDO::PARAM_STR);
         $stmt->bindParam(':administered_by', $administeredBy, PDO::PARAM_INT);
         $stmt->bindParam(':administration_site', $administrationSite, PDO::PARAM_STR);
@@ -331,14 +338,14 @@ function recordVaccination($childId, $vaccineId, $doseNumber, $appointmentId, $i
         
         $result = $stmt->execute();
         
-        // If successful and status is 'Administered', update inventory
+        // If successful and status is 'Administered', update vaccine quantity
         if ($result && $status === 'Administered') {
             $stmt = $conn->prepare("
-                UPDATE inventory 
+                UPDATE vaccines 
                 SET quantity = quantity - 1
-                WHERE id = :inventory_id
+                WHERE id = :vaccine_id
             ");
-            $stmt->bindParam(':inventory_id', $inventoryId, PDO::PARAM_INT);
+            $stmt->bindParam(':vaccine_id', $vaccineId, PDO::PARAM_INT);
             $stmt->execute();
         }
         
@@ -660,6 +667,143 @@ function deleteInventoryItem($inventoryId) {
         return $stmt->execute();
     } catch (PDOException $e) {
         error_log("Error deleting inventory item: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Add a new vaccine to the database
+ * 
+ * @param string $name Vaccine name
+ * @param string $target_disease Target disease
+ * @param string $manufacturer Manufacturer
+ * @param string $batch_number Batch number
+ * @param int $quantity Quantity
+ * @param string $expiry_date Expiry date
+ * @param int $max_doses Maximum doses
+ * @param string $administration_method Administration method
+ * @param string $dosage Dosage
+ * @param string $storage_requirements Storage requirements
+ * @param string $contraindications Contraindications
+ * @param string $side_effects Side effects
+ * @return bool Success status
+ */
+function addVaccine($name, $target_disease, $manufacturer, $batch_number, $quantity, $expiry_date, 
+                   $max_doses, $administration_method, $dosage, $storage_requirements, 
+                   $contraindications, $side_effects) {
+    global $conn;
+    try {
+        $stmt = $conn->prepare("
+            INSERT INTO vaccines (
+                name, target_disease, manufacturer, batch_number, quantity, 
+                expiry_date, max_doses, administration_method, dosage, 
+                storage_requirements, contraindications, side_effects
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+        ");
+        return $stmt->execute([
+            $name, $target_disease, $manufacturer, $batch_number, $quantity,
+            $expiry_date, $max_doses, $administration_method, $dosage,
+            $storage_requirements, $contraindications, $side_effects
+        ]);
+    } catch (PDOException $e) {
+        error_log("Error adding vaccine: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Update a vaccine's quantity
+ * 
+ * @param int $id Vaccine ID
+ * @param int $quantity New quantity
+ * @return bool Success status
+ */
+function updateVaccineQuantity($id, $quantity) {
+    global $conn;
+    try {
+        $stmt = $conn->prepare("UPDATE vaccines SET quantity = ? WHERE id = ?");
+        return $stmt->execute([$quantity, $id]);
+    } catch (PDOException $e) {
+        error_log("Error updating vaccine quantity: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Delete a vaccine from the database
+ * 
+ * @param int $id Vaccine ID
+ * @return bool Success status
+ */
+function deleteVaccine($id) {
+    global $conn;
+    try {
+        $stmt = $conn->prepare("DELETE FROM vaccines WHERE id = ?");
+        return $stmt->execute([$id]);
+    } catch (PDOException $e) {
+        error_log("Error deleting vaccine: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Get all vaccines with low stock (less than 10)
+ * 
+ * @return array Array of low stock vaccines
+ */
+function getLowStockVaccines() {
+    global $conn;
+    try {
+        $stmt = $conn->query("SELECT * FROM vaccines WHERE quantity < 10 ORDER BY quantity ASC");
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        error_log("Error fetching low stock vaccines: " . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * Get all expired vaccines
+ * 
+ * @return array Array of expired vaccines
+ */
+function getExpiredVaccines() {
+    global $conn;
+    try {
+        $stmt = $conn->query("SELECT * FROM vaccines WHERE expiry_date < CURDATE() ORDER BY expiry_date ASC");
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        error_log("Error fetching expired vaccines: " . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * Update a vaccine's details
+ * 
+ * @param int $id Vaccine ID
+ * @param string $batch_number New batch number
+ * @param int $quantity New quantity
+ * @param string $expiry_date New expiry date
+ * @param string $manufacturer New manufacturer
+ * @return bool Success status
+ */
+function updateVaccine($id, $batch_number, $quantity, $expiry_date, $manufacturer) {
+    global $conn;
+    try {
+        $stmt = $conn->prepare("
+            UPDATE vaccines 
+            SET batch_number = ?, 
+                quantity = ?, 
+                expiry_date = ?, 
+                manufacturer = ?
+            WHERE id = ?
+        ");
+        return $stmt->execute([$batch_number, $quantity, $expiry_date, $manufacturer, $id]);
+    } catch (PDOException $e) {
+        error_log("Error updating vaccine: " . $e->getMessage());
         return false;
     }
 }

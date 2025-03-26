@@ -42,10 +42,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             // Fetch user from the database (with matching email and role)
             $stmt = $conn->prepare("SELECT id, email, password, role, username FROM users WHERE email = :email AND role = :role");
-            $stmt->bindParam(':email', $email);
-            $stmt->bindParam(':role', $role);
-            $stmt->execute();
-            $user = $stmt->fetch(PDO::FETCH_ASSOC);
+    $stmt->bindParam(':email', $email);
+    $stmt->bindParam(':role', $role);
+    $stmt->execute();
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
             // Debug password verification
             error_log("User found - ID: {$user['id']}, Email: {$user['email']}, Role: {$user['role']}");
@@ -57,19 +57,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             if ($password_verified) {
                 // Password is correct, set session data
-                $_SESSION['user'] = [
-                    'id' => $user['id'],
-                    'email' => $user['email'],
+        $_SESSION['user'] = [
+            'id' => $user['id'],
+            'email' => $user['email'],
                     'role' => $user['role'],
                     'username' => $user['username']
-                ];
-                
-                // Set login success message
-                $_SESSION['login_success'] = true;
+        ];
+        
+        // Set login success message
+        $_SESSION['login_success'] = true;
                 error_log("Login successful - Redirecting to dashboard");
-                header('Location: dashboard.php');
-                exit();
-            } else {
+        header('Location: dashboard.php');
+        exit();
+    } else {
                 error_log("Password verification failed");
                 $error = "Invalid password. Please try again.";
             }

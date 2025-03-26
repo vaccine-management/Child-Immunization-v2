@@ -383,9 +383,9 @@ if (isset($_GET['edit_id'])) {
                         </button>
                     </div>
                 </div>
-                <div class="flex justify-end space-x-4">
+            <div class="flex justify-end space-x-4">
                     <button type="button" onclick="closeModal('addUserModal')" class="px-4 py-2 text-gray-300 hover:text-white">
-                        Cancel
+                    Cancel
                     </button>
                     <button type="submit" name="add_user" id="submitUserBtn" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
                         Add User

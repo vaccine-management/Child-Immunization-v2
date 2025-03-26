@@ -1,0 +1,2 @@
+2025-03-21 13:08:40 - Error: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'vaccine_name' in 'where clause'
+
