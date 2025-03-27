@@ -135,7 +135,7 @@ foreach ($inventoryItems as $item) {
     // If we already have this vaccine in the array, add to its quantity
     $found = false;
     foreach ($vaccineStock as &$stock) {
-        if ($stock['vaccine_name'] === $item['vaccine_name']) {
+        if ($stock['vaccine_name'] === $item['name']) {
             $stock['quantity'] += $item['quantity'];
             $found = true;
             break;
@@ -145,7 +145,7 @@ foreach ($inventoryItems as $item) {
     // If not found, add a new entry
     if (!$found) {
         $vaccineStock[] = [
-            'vaccine_name' => $item['vaccine_name'],
+            'vaccine_name' => $item['name'],
             'quantity' => $item['quantity']
         ];
     }

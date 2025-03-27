@@ -152,7 +152,7 @@ try {
     
     // Create consolidated vaccines table
     $conn->exec("
-    -- 4. Vaccines table (consolidated)
+    -- 4. Vaccines table (consolidated with inventory)
     CREATE TABLE vaccines (
         id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -165,8 +165,12 @@ try {
         storage_requirements TEXT,
         contraindications TEXT,
         side_effects TEXT,
+        batch_number VARCHAR(255) NOT NULL,
+        quantity INT NOT NULL DEFAULT 0,
+        expiry_date DATE NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_batch (name, batch_number)
     )");
     echo "Vaccines table created.<br>";
     
@@ -257,7 +261,6 @@ try {
         vaccine_id INT NOT NULL,
         dose_number INT NOT NULL,
         appointment_id INT,
-        inventory_id INT NOT NULL,
         administered_date DATE NOT NULL,
         administered_by INT NOT NULL,
         administration_site VARCHAR(50),
@@ -270,8 +273,7 @@ try {
         FOREIGN KEY (child_id) REFERENCES children(child_id) ON DELETE CASCADE,
         FOREIGN KEY (vaccine_id) REFERENCES vaccines(id) ON DELETE RESTRICT,
         FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE SET NULL,
-        FOREIGN KEY (administered_by) REFERENCES users(id) ON DELETE RESTRICT,
-        FOREIGN KEY (inventory_id) REFERENCES inventory(id) ON DELETE RESTRICT
+        FOREIGN KEY (administered_by) REFERENCES users(id) ON DELETE RESTRICT
     )");
     echo "Vaccinations table created.<br>";
     
