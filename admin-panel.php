@@ -107,6 +107,28 @@ $nurses = $conn->query("SELECT * FROM users WHERE role = 'Nurse'")->fetchAll(PDO
                 </div>
                 <?php unset($_SESSION['sms_notification']); ?>
             <?php endif; ?>
+            
+            <!-- Admin Quick Links -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <a href="admin_pages/users.php" class="bg-indigo-700 hover:bg-indigo-600 transition-colors p-4 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                    </svg>
+                    <span>Manage Users</span>
+                </a>
+                <a href="admin_pages/inventory.php" class="bg-green-700 hover:bg-green-600 transition-colors p-4 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                    </svg>
+                    <span>Inventory</span>
+                </a>
+                <a href="admin_pages/sms-management.php" class="bg-purple-700 hover:bg-purple-600 transition-colors p-4 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path>
+                    </svg>
+                    <span>SMS Management</span>
+                </a>
+            </div>
         </div>
             </div>
 
