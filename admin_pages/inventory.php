@@ -158,17 +158,17 @@ $vaccines = getAllVaccines();
         }
         /* Custom scrollbar styles */
         .overflow-x-auto::-webkit-scrollbar {
-            height: 8px;
+            height: 6px;
         }
 
         .overflow-x-auto::-webkit-scrollbar-track {
             background: #1f2937;
-            border-radius: 4px;
+            border-radius: 3px;
         }
 
         .overflow-x-auto::-webkit-scrollbar-thumb {
             background: #4b5563;
-            border-radius: 4px;
+            border-radius: 3px;
         }
 
         .overflow-x-auto::-webkit-scrollbar-thumb:hover {
@@ -206,12 +206,12 @@ $vaccines = getAllVaccines();
 
         .table th {
             white-space: nowrap;
-            padding: 0.75rem 1rem;
+            padding: 0.5rem 0.75rem;
         }
 
         .table td {
             vertical-align: middle;
-            padding: 0.75rem 1rem;
+            padding: 0.5rem 0.75rem;
         }
 
         /* Truncate text with ellipsis */
@@ -257,7 +257,7 @@ $vaccines = getAllVaccines();
             <?php endif; ?>
             
             <!-- Page Header -->
-            <div class="mb-6 flex justify-between items-center">
+            <div class="mb-6 flex justify-between items-right w-3/4 ml-auto">
                 <div>
                     <h1 class="text-2xl font-bold text-white">Inventory Management</h1>
                     <p class="text-gray-400">Manage and view all inventory items</p>
@@ -268,80 +268,74 @@ $vaccines = getAllVaccines();
             </div>
             
             <!-- Inventory Table -->
-            <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-                <div class="overflow-x-auto">
-                    <table class="w-full divide-y divide-gray-700">
-                        <thead class="bg-gray-700">
-                            <tr>
-                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider w-1/4">Vaccine Name</th>
-                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider w-1/4">Target Disease</th>
-                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider w-1/6">Quantity</th>
-                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider w-1/6">Expiry Date</th>
-                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider w-1/6">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-gray-800 divide-y divide-gray-700">
-                            <?php if (!empty($vaccines)): ?>
-                                <?php foreach ($vaccines as $vaccine): ?>
-                                    <tr class="hover:bg-gray-700 transition-colors duration-150">
-                                        <td class="px-4 py-2 text-sm text-gray-300">
-                                            <div class="truncate" title="<?php echo htmlspecialchars($vaccine['name'] ?? ''); ?>">
-                                                <?php echo htmlspecialchars($vaccine['name'] ?? ''); ?>
-                                            </div>
-                                        </td>
-                                        <td class="px-4 py-2 text-sm text-gray-300">
-                                            <div class="truncate" title="<?php echo htmlspecialchars($vaccine['target_disease'] ?? ''); ?>">
-                                                <?php echo htmlspecialchars($vaccine['target_disease'] ?? ''); ?>
-                                            </div>
-                                        </td>
-                                        <td class="px-4 py-2 text-sm text-gray-300">
-                                            <form method="POST" class="inline-flex">
-                                                <input type="hidden" name="id" value="<?php echo $vaccine['id']; ?>">
-                                                <div class="flex items-center space-x-1">
-                                                    <input type="number" name="quantity" class="w-16 px-1 py-0.5 bg-gray-700 text-gray-300 rounded border border-gray-600 focus:outline-none focus:border-blue-500 text-sm" value="<?php echo htmlspecialchars($vaccine['quantity'] ?? '0'); ?>" min="0">
-                                                    <button type="submit" name="update" class="px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors duration-150 text-xs">
-                                                        Update
-                                                    </button>
-                                                </div>
-                                            </form>
-                                        </td>
-                                        <td class="px-4 py-2 text-sm text-gray-300">
-                                            <?php echo htmlspecialchars($vaccine['expiry_date'] ?? ''); ?>
-                                        </td>
-                                        <td class="px-4 py-2 text-sm text-gray-300">
-                                            <div class="flex space-x-1">
-                                                <button onclick="openViewModal(
-                                                    <?php echo htmlspecialchars(json_encode($vaccine)); ?>
-                                                )" class="p-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors duration-150" title="View Details">
-                                                    <i class="fas fa-eye text-xs"></i>
-                                                </button>
-                                                <button onclick="openEditModal(
-                                                    <?php echo $vaccine['id']; ?>, 
-                                                    '<?php echo htmlspecialchars($vaccine['batch_number'] ?? ''); ?>',
-                                                    <?php echo htmlspecialchars($vaccine['quantity'] ?? '0'); ?>,
-                                                    '<?php echo htmlspecialchars($vaccine['expiry_date'] ?? ''); ?>',
-                                                    '<?php echo htmlspecialchars($vaccine['manufacturer'] ?? ''); ?>'
-                                                )" class="p-1 bg-yellow-600 text-white rounded hover:bg-yellow-700 transition-colors duration-150" title="Edit">
-                                                    <i class="fas fa-edit text-xs"></i>
-                                                </button>
-                                                <form method="POST" class="inline" onsubmit="return confirm('Are you sure you want to delete this vaccine?');">
-                                                    <input type="hidden" name="id" value="<?php echo $vaccine['id']; ?>">
-                                                    <button type="submit" name="delete" class="p-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors duration-150" title="Delete">
-                                                        <i class="fas fa-trash text-xs"></i>
-                                                    </button>
-                                                </form>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            <?php else: ?>
-                                <tr>
-                                    <td colspan="5" class="px-4 py-2 text-center text-sm text-gray-300">No vaccines found</td>
-                                </tr>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
+            <div class="w-3/4 ml-auto overflow-x-auto">
+    <table class="w-full divide-y divide-gray-700">
+        <thead class="bg-gray-700">
+            <tr>
+                <th class="px-3 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider w-1/4">Vaccine Name</th>
+                <th class="px-3 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider w-1/4">Target Disease</th>
+                <th class="px-3 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider w-1/6">Quantity</th>
+                <th class="px-3 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider w-1/6">Expiry Date</th>
+                <th class="px-3 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider w-1/6">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="bg-gray-800 divide-y divide-gray-700">
+            <?php if (!empty($vaccines)): ?>
+                <?php foreach ($vaccines as $vaccine): ?>
+                    <tr class="hover:bg-gray-700 transition-colors duration-150">
+                        <td class="px-3 py-2 text-sm text-gray-300 truncate" title="<?php echo htmlspecialchars($vaccine['name'] ?? ''); ?>">
+                            <?php echo htmlspecialchars($vaccine['name'] ?? ''); ?>
+                        </td>
+                        <td class="px-3 py-2 text-sm text-gray-300 truncate" title="<?php echo htmlspecialchars($vaccine['target_disease'] ?? ''); ?>">
+                            <?php echo htmlspecialchars($vaccine['target_disease'] ?? ''); ?>
+                        </td>
+                        <td class="px-3 py-2 text-sm text-gray-300">
+                            <form method="POST" class="inline-flex">
+                                <input type="hidden" name="id" value="<?php echo $vaccine['id']; ?>">
+                                <div class="flex items-center space-x-1">
+                                    <input type="number" name="quantity" class="w-16 px-1 py-0.5 bg-gray-700 text-gray-300 rounded border border-gray-600 focus:outline-none focus:border-blue-500 text-sm" value="<?php echo htmlspecialchars($vaccine['quantity'] ?? '0'); ?>" min="0">
+                                    <button type="submit" name="update" class="px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors duration-150 text-xs">
+                                        Update
+                                    </button>
+                                </div>
+                            </form>
+                        </td>
+                        <td class="px-3 py-2 text-sm text-gray-300">
+                            <?php echo htmlspecialchars($vaccine['expiry_date'] ?? ''); ?>
+                        </td>
+                        <td class="px-3 py-2 text-sm text-gray-300">
+                            <div class="flex space-x-1">
+                                <button onclick="openViewModal(<?php echo htmlspecialchars(json_encode($vaccine)); ?>)" class="p-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors duration-150" title="View Details">
+                                    <i class="fas fa-eye text-xs"></i>
+                                </button>
+                                <button onclick="openEditModal(
+                                    <?php echo $vaccine['id']; ?>, 
+                                    '<?php echo htmlspecialchars($vaccine['batch_number'] ?? ''); ?>',
+                                    <?php echo htmlspecialchars($vaccine['quantity'] ?? '0'); ?>,
+                                    '<?php echo htmlspecialchars($vaccine['expiry_date'] ?? ''); ?>',
+                                    '<?php echo htmlspecialchars($vaccine['manufacturer'] ?? ''); ?>'
+                                )" class="p-1 bg-yellow-600 text-white rounded hover:bg-yellow-700 transition-colors duration-150" title="Edit">
+                                    <i class="fas fa-edit text-xs"></i>
+                                </button>
+                                <form method="POST" class="inline" onsubmit="return confirm('Are you sure you want to delete this vaccine?');">
+                                    <input type="hidden" name="id" value="<?php echo $vaccine['id']; ?>">
+                                    <button type="submit" name="delete" class="p-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors duration-150" title="Delete">
+                                        <i class="fas fa-trash text-xs"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <tr>
+                    <td colspan="5" class="px-3 py-2 text-center text-sm text-gray-300">No vaccines found</td>
+                </tr>
+            <?php endif; ?>
+        </tbody>
+    </table>
+</div>
+
             </div>
         </div>
     </main>
@@ -409,7 +403,7 @@ $vaccines = getAllVaccines();
                         <p class="text-white" id="view_side_effects"></p>
                     </div>
                 </div>
-            </div>
+            
         </div>
     </div>
 
