@@ -298,6 +298,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $vaccineStmt = $conn->prepare("
                                     INSERT INTO vaccinations (
                                         child_id, 
+                                        vaccine_id,
                                         vaccine_name, 
                                         dose_number,
                                         scheduled_date, 
@@ -306,6 +307,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         notes
                                     ) VALUES (
                                         :child_id,
+                                        (SELECT id FROM vaccines WHERE name = :vaccine_name),
                                         :vaccine_name,
                                         :dose_number, 
                                         :scheduled_date,
@@ -328,11 +330,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $apptVaccineStmt = $conn->prepare("
                                     INSERT INTO appointment_vaccines (
                                         appointment_id,
+                                        vaccine_id,
                                         vaccine_name,
                                         dose_number,
                                         status
                                     ) VALUES (
                                         :appointment_id,
+                                        (SELECT id FROM vaccines WHERE name = :vaccine_name),
                                         :vaccine_name,
                                         :dose_number,
                                         'scheduled'
