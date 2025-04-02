@@ -1,6 +1,12 @@
 <?php
 session_start();
 
+require_once __DIR__ . '/vendor/autoload.php';
+use Dotenv\Dotenv;
+
+$dotenv = Dotenv::createImmutable(__DIR__);
+$dotenv->load();
+
 // Ensure user is logged in
 if (!isset($_SESSION['user'])) {
     header('Location: login.php');
@@ -127,7 +133,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':previous_vaccinations' => $previousVaccinations,
                         ':registration_date' => $registrationDate
                     ]);
+// After successful child insertion
+require_once 'includes/sms.php';
 
+// Get upcoming vaccines
+$upcomingVaccines = [];
+$stmt = $conn->prepare("
+    SELECT v.vaccine_name, vs.age_unit, vs.age_value
+    FROM vaccine_schedule vs
+    JOIN vaccines v ON vs.vaccine_id = v.id
+    ORDER BY 
+        CASE vs.age_unit 
+            WHEN 'days' THEN vs.age_value
+            WHEN 'weeks' THEN vs.age_value * 7
+            WHEN 'months' THEN vs.age_value * 30
+            WHEN 'years' THEN vs.age_value * 365
+        END ASC
+");
+$stmt->execute();
+$vaccines = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$birthDate = new DateTime($dateOfBirth);
+$today = new DateTime();
+
+foreach ($vaccines as $vaccine) {
+    $vaccineDate = clone $birthDate;
+    switch ($vaccine['age_unit']) {
+        case 'days':
+            $vaccineDate->add(new DateInterval('P' . $vaccine['age_value'] . 'D'));
+            break;
+        case 'weeks':
+            $vaccineDate->add(new DateInterval('P' . ($vaccine['age_value'] * 7) . 'D'));
+            break;
+        case 'months':
+            $vaccineDate->add(new DateInterval('P' . $vaccine['age_value'] . 'M'));
+            break;
+        case 'years':
+            $vaccineDate->add(new DateInterval('P' . $vaccine['age_value'] . 'Y'));
+            break;
+    }
+    if ($vaccineDate > $today) {
+        $upcomingVaccines[] = [
+            'vaccine' => $vaccine['vaccine_name'],
+            'date' => $vaccineDate->format('Y-m-d')
+        ];
+    }
+}
+
+// Send SMS with upcoming vaccines
+if (!empty($upcomingVaccines)) {
+    $message = "Dear $guardianName, your child $fullName has been registered (ID: $childID). Upcoming vaccines:\n";
+    foreach ($upcomingVaccines as $vaccine) {
+        $message .= "- {$vaccine['vaccine']} on {$vaccine['date']}\n";
+    }
+    $message = substr($message, 0, 160); // Ensure message fits SMS limit
+
+    $smsResult = sendSMS($phone, $message);
+    if ($smsResult['success']) {
+        $_SESSION['success'] = "Child registered successfully with ID: $childID. SMS sent to $phone.";
+    } else {
+        $_SESSION['success'] = "Child registered successfully with ID: $childID.";
+        $_SESSION['warning'] = "Failed to send SMS: " . $smsResult['message'];
+    }
+} else {
+    $_SESSION['success'] = "Child registered successfully with ID: $childID. No upcoming vaccines scheduled.";
+}
                     // Generate automatic vaccination schedule for the newly registered child
                     try {
                         // Fetch vaccine schedule information - ordered by age for proper scheduling
@@ -242,7 +312,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             }
                             
                             // Set default appointment time
-                            $appointmentTime = '09:00:00';
+                            $appointmentTime = '08:00:00';
                             
                             // Get the age description for the first vaccine in this group
                             $firstVaccine = $vaccines[0];
