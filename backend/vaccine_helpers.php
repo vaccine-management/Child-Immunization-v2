@@ -359,7 +359,7 @@ function recordVaccination($childId, $vaccineId, $doseNumber, $appointmentId,
                 AND dose_number = :dose_number
             ");
             
-            $appointmentStatus = ($status === 'Administered') ? 'completed' : 'missed';
+            $appointmentStatus = ($status === 'Administered') ? 'administered' : 'missed';
             $stmt->bindParam(':status', $appointmentStatus, PDO::PARAM_STR);
             $stmt->bindParam(':appointment_id', $appointmentId, PDO::PARAM_INT);
             $stmt->bindParam(':vaccine_id', $vaccineId, PDO::PARAM_INT);
@@ -484,7 +484,7 @@ function getUpcomingAppointments($fromDate = null, $toDate = null) {
         LEFT JOIN appointment_vaccines av ON a.id = av.appointment_id
         WHERE 
             a.scheduled_date BETWEEN :from_date AND :to_date
-            AND a.status IN ('scheduled', 'partially_completed')
+            AND a.status IN ('scheduled')
         GROUP BY a.id
         ORDER BY a.scheduled_date
     ");

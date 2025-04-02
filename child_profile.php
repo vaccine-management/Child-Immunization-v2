@@ -231,10 +231,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             // Check if the vaccine is already scheduled
             $stmt = $conn->prepare("
-                SELECT v.child_id, vac.name as vaccine_name, v.dose_number, a.scheduled_date
+                SELECT v.child_id, vac.name as vaccine_name, v.dose_number, v.scheduled_date
                 FROM vaccinations v
                 JOIN vaccines vac ON v.vaccine_id = vac.id
-                JOIN appointments a ON v.appointment_id = a.id
                 WHERE v.child_id = :child_id 
                 AND vac.name = :vaccine_name 
                 AND v.dose_number = :dose_number 
@@ -298,7 +297,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // Update appointment_vaccines status
                     $stmt = $conn->prepare("
                         UPDATE appointment_vaccines 
-                        SET status = 'completed' 
+                        SET status = 'administered' 
                         WHERE appointment_id = :appointment_id 
                         AND vaccine_id = (SELECT id FROM vaccines WHERE name = :vaccine_name)
                         AND dose_number = :dose_number
@@ -313,7 +312,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // Check all vaccines for this appointment
                     $stmt = $conn->prepare("
                         SELECT COUNT(*) as total, 
-                               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed 
+                               SUM(CASE WHEN status = 'administered' THEN 1 ELSE 0 END) as completed 
                         FROM appointment_vaccines 
                         WHERE appointment_id = :appointment_id
                     ");
@@ -321,13 +320,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $counts = $stmt->fetch(PDO::FETCH_ASSOC);
                     $debug_log[] = "Checked appointment completion: Total: {$counts['total']}, Completed: {$counts['completed']}";
                     
-                    // Update appointment status - note the correct ENUM value 'partially_completed'
+                    // Update appointment status - use values valid in the appointments table
                     $appointmentStatus = 'scheduled';
                     if ($counts['completed'] > 0) {
                         if ($counts['completed'] == $counts['total']) {
                             $appointmentStatus = 'completed';
                         } else {
-                            $appointmentStatus = 'partially_completed';
+                            $appointmentStatus = 'scheduled';  // Changed from partially_completed to a valid ENUM value
                         }
                     }
                     $debug_log[] = "Setting appointment status to: $appointmentStatus";
@@ -406,7 +405,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         (SELECT id FROM vaccines WHERE name = :vaccine_name),
                         :vaccine_name, 
                         :dose_number, 
-                        'completed'
+                        'administered'
                     )
                 ");
                 
@@ -519,19 +518,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Create the vaccination record with appointment_id
             $stmt = $conn->prepare("
                 INSERT INTO vaccinations (
-                    child_id, vaccine_id, dose_number, appointment_id, inventory_id, administered_date, administered_by, status, notes
+                    child_id, vaccine_id, vaccine_name, dose_number, scheduled_date, status, notes
                 ) VALUES (
-                    :child_id, :vaccine_id, :dose_number, :appointment_id, :inventory_id, :administered_date, :administered_by, 'Scheduled', :notes
+                    :child_id, :vaccine_id, :vaccine_name, :dose_number, :scheduled_date, 'Scheduled', :notes
                 )
             ");
             $stmt->execute([
                 ':child_id' => $childId,
                 ':vaccine_id' => $vaccineId,
+                ':vaccine_name' => $vaccineName,
                 ':dose_number' => $doseNumber,
-                ':appointment_id' => $appointmentId,
-                ':inventory_id' => $inventoryId,
-                ':administered_date' => $scheduledDate, // Using scheduled date as administered date for now
-                ':administered_by' => $_SESSION['user']['id'], // Current user
+                ':scheduled_date' => $scheduledDate,
                 ':notes' => $notes
             ]);
             
@@ -769,7 +766,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Update the appointment_vaccines table
             $appointmentStmt = $conn->prepare("
                 UPDATE appointment_vaccines 
-                SET status = 'completed' 
+                SET status = 'administered' 
                 WHERE vaccine_name = :vaccine_name 
                 AND dose_number = :dose_number 
                 AND appointment_id IN (

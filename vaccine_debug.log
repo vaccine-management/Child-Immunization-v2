@@ -56,3 +56,38 @@ New appointment ID: 8
 Transaction rolled back
 Error: SQLSTATE[23000]: Integrity constraint violation: 1452 Cannot add or update a child row: a foreign key constraint fails (`immunization_system`.`vaccinations`, CONSTRAINT `vaccinations_ibfk_4` FOREIGN KEY (`administered_by`) REFERENCES `users` (`id`))
 
+2025-04-02 23:33:05 - Transaction started
+Transaction rolled back
+Error: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'v.appointment_id' in 'on clause'
+
+2025-04-02 23:37:45 - Transaction started
+Transaction rolled back
+Error: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'v.appointment_id' in 'on clause'
+
+2025-04-02 23:38:03 - Error: This vaccine is scheduled for 2026-04-02. Cannot record it before the scheduled date.
+
+2025-04-02 23:38:29 - Transaction started
+Transaction rolled back
+Error: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'v.appointment_id' in 'on clause'
+
+2025-04-02 23:44:20 - Transaction started
+Checked for scheduled vaccine: Found: BCG Dose 1
+Updated vaccination status: Success
+Checked for appointment with date only: Found ID: 14
+Transaction rolled back
+Error: SQLSTATE[01000]: Warning: 1265 Data truncated for column 'status' at row 2
+
+2025-04-02 23:47:08 - Transaction started
+Checked for scheduled vaccine: Found: BCG Dose 1
+Updated vaccination status: Success
+Checked for appointment with date only: Found ID: 14
+Transaction rolled back
+Error: SQLSTATE[01000]: Warning: 1265 Data truncated for column 'status' at row 2
+
+2025-04-02 23:47:31 - Transaction started
+Checked for scheduled vaccine: Found: BCG Dose 1
+Updated vaccination status: Success
+Checked for appointment with date only: Found ID: 14
+Transaction rolled back
+Error: SQLSTATE[01000]: Warning: 1265 Data truncated for column 'status' at row 2
+
