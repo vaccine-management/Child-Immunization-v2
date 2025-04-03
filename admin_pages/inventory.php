@@ -72,8 +72,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $quantity = filter_var($_POST['quantity'], FILTER_VALIDATE_INT);
         $expiry_date = $_POST['expiry_date'];
         $manufacturer = trim($_POST['manufacturer']);
+        $target_disease = isset($_POST['target_disease']) ? trim($_POST['target_disease']) : null;
+        $max_doses = isset($_POST['max_doses']) ? filter_var($_POST['max_doses'], FILTER_VALIDATE_INT) : null;
+        $administration_method = isset($_POST['administration_method']) ? trim($_POST['administration_method']) : null;
+        $dosage = isset($_POST['dosage']) ? trim($_POST['dosage']) : null;
+        $storage_requirements = isset($_POST['storage_requirements']) ? trim($_POST['storage_requirements']) : null;
+        $contraindications = isset($_POST['contraindications']) ? trim($_POST['contraindications']) : null;
+        $side_effects = isset($_POST['side_effects']) ? trim($_POST['side_effects']) : null;
         
-        if (updateVaccine($id, $batch_number, $quantity, $expiry_date, $manufacturer)) {
+        if (updateVaccine($id, $batch_number, $quantity, $expiry_date, $manufacturer, 
+                          $target_disease, $max_doses, $administration_method, 
+                          $dosage, $storage_requirements, $contraindications, $side_effects)) {
             $_SESSION['inventory_success'] = "Vaccine updated successfully!";
         } else {
             $_SESSION['inventory_error'] = "Error updating vaccine.";
@@ -158,17 +167,17 @@ $vaccines = getAllVaccines();
         }
         /* Custom scrollbar styles */
         .overflow-x-auto::-webkit-scrollbar {
-            height: 8px;
+            height: 6px;
         }
 
         .overflow-x-auto::-webkit-scrollbar-track {
             background: #1f2937;
-            border-radius: 4px;
+            border-radius: 3px;
         }
 
         .overflow-x-auto::-webkit-scrollbar-thumb {
             background: #4b5563;
-            border-radius: 4px;
+            border-radius: 3px;
         }
 
         .overflow-x-auto::-webkit-scrollbar-thumb:hover {
@@ -183,8 +192,9 @@ $vaccines = getAllVaccines();
 
         /* Ensure table container fits */
         .container {
-            max-width: calc(100% - 2rem);
+            max-width: 1200px;
             margin: 0 auto;
+            padding: 0 1rem;
         }
 
         /* Make table cells more compact */
@@ -205,10 +215,12 @@ $vaccines = getAllVaccines();
 
         .table th {
             white-space: nowrap;
+            padding: 0.5rem 0.75rem;
         }
 
         .table td {
             vertical-align: middle;
+            padding: 0.5rem 0.75rem;
         }
 
         /* Truncate text with ellipsis */
@@ -225,8 +237,8 @@ $vaccines = getAllVaccines();
     <?php require_once ROOT_PATH . 'includes/sidebar.php'; ?>
 
     <!-- Main Content -->
-    <main id="main-content" class="lg:ml-64 ml-0 pt-16 min-h-screen bg-gray-900 transition-all duration-300 ease-in-out w-5/10 ">
-        <div class="container mx-auto px-4 py-8">
+    <main id="main-content" class="lg:ml-64 ml-0 pt-16 min-h-screen bg-gray-900 transition-all duration-300 ease-in-out">
+        <div class="container mx-auto px-4 py-8 max-w-6xl">
             <!-- Success message -->
             <?php if (isset($_SESSION['inventory_success'])): ?>
                 <div class="alert alert-success alert-dismissible fade show" role="alert" id="successAlert">
@@ -254,7 +266,7 @@ $vaccines = getAllVaccines();
             <?php endif; ?>
             
             <!-- Page Header -->
-            <div class="mb-6 flex justify-between items-center">
+            <div class="mb-6 flex justify-between items-center w-[82%] ml-auto">
                 <div>
                     <h1 class="text-2xl font-bold text-white">Inventory Management</h1>
                     <p class="text-gray-400">Manage and view all inventory items</p>
@@ -265,198 +277,97 @@ $vaccines = getAllVaccines();
             </div>
             
             <!-- Inventory Table -->
-            <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-700">
-                        <thead class="bg-gray-700">
-                            <tr>
-                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider" style="min-width: 200px;">Vaccine Name</th>
-                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider" style="min-width: 150px;">Target Disease</th>
-                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider" style="min-width: 100px;">Quantity</th>
-                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider" style="min-width: 120px;">Expiry Date</th>
-                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider" style="min-width: 120px;">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-gray-800 divide-y divide-gray-700">
-                            <?php if (!empty($vaccines)): ?>
-                                <?php foreach ($vaccines as $vaccine): ?>
-                                    <tr class="hover:bg-gray-700 transition-colors duration-150">
-                                        <td class="px-4 py-2 text-sm text-gray-300">
-                                            <div class="truncate max-w-xs" title="<?php echo htmlspecialchars($vaccine['name'] ?? ''); ?>">
-                                                <?php echo htmlspecialchars($vaccine['name'] ?? ''); ?>
-                                            </div>
-                                        </td>
-                                        <td class="px-4 py-2 text-sm text-gray-300">
-                                            <div class="truncate max-w-xs" title="<?php echo htmlspecialchars($vaccine['target_disease'] ?? ''); ?>">
-                                                <?php echo htmlspecialchars($vaccine['target_disease'] ?? ''); ?>
-                                            </div>
-                                        </td>
-                                        <td class="px-4 py-2 text-sm text-gray-300">
-                                            <form method="POST" class="inline-flex">
-                                                <input type="hidden" name="id" value="<?php echo $vaccine['id']; ?>">
-                                                <div class="flex items-center space-x-1">
-                                                    <input type="number" name="quantity" class="w-16 px-1 py-0.5 bg-gray-700 text-gray-300 rounded border border-gray-600 focus:outline-none focus:border-blue-500 text-sm" value="<?php echo htmlspecialchars($vaccine['quantity'] ?? '0'); ?>" min="0">
-                                                    <button type="submit" name="update" class="px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors duration-150 text-xs">
-                                                        Update
-                                                    </button>
-                                                </div>
-                                            </form>
-                                        </td>
-                                        <td class="px-4 py-2 text-sm text-gray-300">
-                                            <?php echo htmlspecialchars($vaccine['expiry_date'] ?? ''); ?>
-                                        </td>
-                                        <td class="px-4 py-2 text-sm text-gray-300">
-                                            <div class="flex space-x-1">
-                                                <button onclick="openViewModal(
-                                                    <?php echo htmlspecialchars(json_encode($vaccine)); ?>
-                                                )" class="p-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors duration-150" title="View Details">
-                                                    <i class="fas fa-eye text-xs"></i>
-                                                </button>
-                                                <button onclick="openEditModal(
-                                                    <?php echo $vaccine['id']; ?>, 
-                                                    '<?php echo htmlspecialchars($vaccine['batch_number'] ?? ''); ?>',
-                                                    <?php echo htmlspecialchars($vaccine['quantity'] ?? '0'); ?>,
-                                                    '<?php echo htmlspecialchars($vaccine['expiry_date'] ?? ''); ?>',
-                                                    '<?php echo htmlspecialchars($vaccine['manufacturer'] ?? ''); ?>'
-                                                )" class="p-1 bg-yellow-600 text-white rounded hover:bg-yellow-700 transition-colors duration-150" title="Edit">
-                                                    <i class="fas fa-edit text-xs"></i>
-                                                </button>
-                                                <form method="POST" class="inline" onsubmit="return confirm('Are you sure you want to delete this vaccine?');">
-                                                    <input type="hidden" name="id" value="<?php echo $vaccine['id']; ?>">
-                                                    <button type="submit" name="delete" class="p-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors duration-150" title="Delete">
-                                                        <i class="fas fa-trash text-xs"></i>
-                                                    </button>
-                                                </form>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            <?php else: ?>
-                                <tr>
-                                    <td colspan="5" class="px-4 py-2 text-center text-sm text-gray-300">No vaccines found</td>
-                                </tr>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
+            <div class="w-[82%] ml-auto overflow-x-auto bg-gray-800 rounded-lg shadow-lg">
+    <table class="w-full divide-y divide-gray-700">
+        <thead class="bg-gray-700">
+            <tr>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Vaccine Name</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Target Disease</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Quantity</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Expiry Date</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="bg-gray-800 divide-y divide-gray-700">
+            <?php if (!empty($vaccines)): ?>
+                <?php foreach ($vaccines as $vaccine): ?>
+                    <tr class="hover:bg-gray-700 transition-colors duration-150">
+                        <td class="px-4 py-3 text-sm text-gray-300" title="<?php echo htmlspecialchars($vaccine['name'] ?? ''); ?>">
+                            <?php echo htmlspecialchars($vaccine['name'] ?? ''); ?>
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-300" title="<?php echo htmlspecialchars($vaccine['target_disease'] ?? ''); ?>">
+                            <?php echo htmlspecialchars($vaccine['target_disease'] ?? ''); ?>
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-300">
+                            <span class="<?php echo ($vaccine['quantity'] < 10) ? 'text-red-400 font-medium' : ''; ?>">
+                                <?php echo htmlspecialchars($vaccine['quantity'] ?? '0'); ?>
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-300">
+                            <?php
+                                $expiry = strtotime($vaccine['expiry_date'] ?? '');
+                                $today = strtotime('today');
+                                $expiryClass = '';
+                                
+                                if ($expiry < $today) {
+                                    $expiryClass = 'text-red-400';
+                                } elseif ($expiry < strtotime('+30 days')) {
+                                    $expiryClass = 'text-yellow-400';
+                                }
+                            ?>
+                            <span class="<?php echo $expiryClass; ?>">
+                                <?php echo htmlspecialchars($vaccine['expiry_date'] ?? ''); ?>
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-300">
+                            <div class="flex space-x-2">
+                                <button onclick="openViewModal(<?php echo htmlspecialchars(json_encode($vaccine)); ?>)" class="p-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors duration-150" title="View Details">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button onclick="openEditModal(
+                                    <?php echo $vaccine['id']; ?>, 
+                                    '<?php echo htmlspecialchars($vaccine['name'] ?? ''); ?>',
+                                    '<?php echo htmlspecialchars($vaccine['batch_number'] ?? ''); ?>',
+                                    <?php echo htmlspecialchars($vaccine['quantity'] ?? '0'); ?>,
+                                    '<?php echo htmlspecialchars($vaccine['expiry_date'] ?? ''); ?>',
+                                    '<?php echo htmlspecialchars($vaccine['manufacturer'] ?? ''); ?>',
+                                    '<?php echo htmlspecialchars($vaccine['target_disease'] ?? ''); ?>',
+                                    <?php echo htmlspecialchars($vaccine['max_doses'] ?? '1'); ?>,
+                                    '<?php echo htmlspecialchars($vaccine['administration_method'] ?? ''); ?>',
+                                    '<?php echo htmlspecialchars($vaccine['dosage'] ?? ''); ?>',
+                                    '<?php echo htmlspecialchars(addslashes($vaccine['storage_requirements'] ?? '')); ?>',
+                                    '<?php echo htmlspecialchars(addslashes($vaccine['contraindications'] ?? '')); ?>',
+                                    '<?php echo htmlspecialchars(addslashes($vaccine['side_effects'] ?? '')); ?>'
+                                )" class="p-1.5 bg-yellow-600 text-white rounded hover:bg-yellow-700 transition-colors duration-150" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <form method="POST" class="inline" onsubmit="return confirm('Are you sure you want to delete this vaccine?');">
+                                    <input type="hidden" name="id" value="<?php echo $vaccine['id']; ?>">
+                                    <button type="submit" name="delete" class="p-1.5 bg-red-600 text-white rounded hover:bg-red-700 transition-colors duration-150" title="Delete">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <tr>
+                    <td colspan="5" class="px-4 py-3 text-center text-sm text-gray-300">No vaccines found</td>
+                </tr>
+            <?php endif; ?>
+        </tbody>
+    </table>
+</div>
+
             </div>
         </div>
     </main>
 
-    <!-- Add Vaccine Modal -->
-    <div id="addModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
-        <div class="flex items-center justify-center min-h-screen">
-            <div class="bg-gray-800 rounded-lg p-8 w-full max-w-md">
-                <div class="flex justify-between items-center mb-6">
-                    <h3 class="text-xl font-bold text-white">Add New Vaccine</h3>
-                    <button onclick="closeModal('addModal')" class="text-gray-400 hover:text-white">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-                <form method="POST" class="space-y-4">
-                    <div>
-                        <label for="vaccine_name" class="block text-sm font-medium text-gray-300 mb-1">Vaccine Name</label>
-                        <input type="text" id="vaccine_name" name="vaccine_name" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label for="target_disease" class="block text-sm font-medium text-gray-300 mb-1">Target Disease</label>
-                        <input type="text" id="target_disease" name="target_disease" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label for="manufacturer" class="block text-sm font-medium text-gray-300 mb-1">Manufacturer</label>
-                        <input type="text" id="manufacturer" name="manufacturer" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label for="batch_number" class="block text-sm font-medium text-gray-300 mb-1">Batch Number</label>
-                        <input type="text" id="batch_number" name="batch_number" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label for="quantity" class="block text-sm font-medium text-gray-300 mb-1">Quantity</label>
-                        <input type="number" id="quantity" name="quantity" min="0" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label for="expiry_date" class="block text-sm font-medium text-gray-300 mb-1">Expiry Date</label>
-                        <input type="date" id="expiry_date" name="expiry_date" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label for="max_doses" class="block text-sm font-medium text-gray-300 mb-1">Maximum Doses</label>
-                        <input type="number" id="max_doses" name="max_doses" min="1" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label for="administration_method" class="block text-sm font-medium text-gray-300 mb-1">Administration Method</label>
-                        <input type="text" id="administration_method" name="administration_method" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label for="dosage" class="block text-sm font-medium text-gray-300 mb-1">Dosage</label>
-                        <input type="text" id="dosage" name="dosage" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label for="storage_requirements" class="block text-sm font-medium text-gray-300 mb-1">Storage Requirements</label>
-                        <textarea id="storage_requirements" name="storage_requirements" rows="2" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
-                    </div>
-                    <div>
-                        <label for="contraindications" class="block text-sm font-medium text-gray-300 mb-1">Contraindications</label>
-                        <textarea id="contraindications" name="contraindications" rows="2" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
-                    </div>
-                    <div>
-                        <label for="side_effects" class="block text-sm font-medium text-gray-300 mb-1">Side Effects</label>
-                        <textarea id="side_effects" name="side_effects" rows="2" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
-                    </div>
-                    <div class="flex justify-end space-x-4 mt-6">
-                        <button type="button" onclick="closeModal('addModal')" class="px-4 py-2 text-gray-300 hover:text-white">
-                            Cancel
-                        </button>
-                        <button type="submit" name="add" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                            Add Vaccine
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <!-- Edit Vaccine Modal -->
-    <div id="editModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center">
-        <div class="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
-            <div class="flex justify-between items-center mb-6">
-                <h3 class="text-xl font-bold text-white">Edit Vaccine</h3>
-                <button onclick="closeModal('editModal')" class="text-gray-400 hover:text-white">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <form method="POST" action="" class="space-y-4">
-                <input type="hidden" name="id" id="edit_id">
-                <div>
-                    <label for="edit_batch_number" class="block text-sm font-medium text-gray-300 mb-1">Batch Number</label>
-                    <input type="text" name="batch_number" id="edit_batch_number" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
-                </div>
-                <div>
-                    <label for="edit_quantity" class="block text-sm font-medium text-gray-300 mb-1">Quantity</label>
-                    <input type="number" name="quantity" id="edit_quantity" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" min="0" required>
-                </div>
-                <div>
-                    <label for="edit_expiry_date" class="block text-sm font-medium text-gray-300 mb-1">Expiry Date</label>
-                    <input type="date" name="expiry_date" id="edit_expiry_date" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
-                </div>
-                <div>
-                    <label for="edit_manufacturer" class="block text-sm font-medium text-gray-300 mb-1">Manufacturer</label>
-                    <input type="text" name="manufacturer" id="edit_manufacturer" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
-                </div>
-                <div class="flex justify-end space-x-4 mt-6">
-                    <button type="button" onclick="closeModal('editModal')" class="px-4 py-2 text-gray-300 hover:text-white">
-                        Cancel
-                    </button>
-                    <button type="submit" name="update" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                        Update
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-
+  
     <!-- View Vaccine Details Modal -->
-    <div id="viewModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center">
-        <div class="bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4">
+    <div id="viewModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 my-8 overflow-y-auto max-h-[90vh]">
             <div class="flex justify-between items-center mb-6">
                 <h3 class="text-xl font-bold text-white">Vaccine Details</h3>
                 <button onclick="closeModal('viewModal')" class="text-gray-400 hover:text-white">
@@ -517,30 +428,190 @@ $vaccines = getAllVaccines();
                     </div>
                 </div>
             </div>
+            <div class="flex justify-end mt-6">
+                <button onclick="closeModal('viewModal')" class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Vaccine Modal -->
+    <div id="addModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 overflow-y-auto">
+        <div class="bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-bold text-white">Add New Vaccine</h3>
+                <button onclick="closeModal('addModal')" class="text-gray-400 hover:text-white">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form method="POST" class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label for="vaccine_name" class="block text-sm font-medium text-gray-300 mb-1">Vaccine Name</label>
+                        <input type="text" id="vaccine_name" name="vaccine_name" placeholder="Vaccine name" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="target_disease" class="block text-sm font-medium text-gray-300 mb-1">Target Disease</label>
+                        <input type="text" id="target_disease" name="target_disease" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="manufacturer" class="block text-sm font-medium text-gray-300 mb-1">Manufacturer</label>
+                        <input type="text" id="manufacturer" name="manufacturer" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="batch_number" class="block text-sm font-medium text-gray-300 mb-1">Batch Number</label>
+                        <input type="text" id="batch_number" name="batch_number" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="quantity" class="block text-sm font-medium text-gray-300 mb-1">Quantity</label>
+                        <input type="number" id="quantity" name="quantity" min="0" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="expiry_date" class="block text-sm font-medium text-gray-300 mb-1">Expiry Date</label>
+                        <input type="date" id="expiry_date" name="expiry_date" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="max_doses" class="block text-sm font-medium text-gray-300 mb-1">Maximum Doses</label>
+                        <input type="number" id="max_doses" name="max_doses" min="1" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="administration_method" class="block text-sm font-medium text-gray-300 mb-1">Administration Method</label>
+                        <input type="text" id="administration_method" name="administration_method" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="dosage" class="block text-sm font-medium text-gray-300 mb-1">Dosage</label>
+                        <input type="text" id="dosage" name="dosage" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                </div>
+                <div class="space-y-4">
+                    <div>
+                        <label for="storage_requirements" class="block text-sm font-medium text-gray-300 mb-1">Storage Requirements</label>
+                        <textarea id="storage_requirements" name="storage_requirements" rows="2" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+                    <div>
+                        <label for="contraindications" class="block text-sm font-medium text-gray-300 mb-1">Contraindications</label>
+                        <textarea id="contraindications" name="contraindications" rows="2" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+                    <div>
+                        <label for="side_effects" class="block text-sm font-medium text-gray-300 mb-1">Side Effects</label>
+                        <textarea id="side_effects" name="side_effects" rows="2" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-4 mt-6">
+                    <button type="button" onclick="closeModal('addModal')" class="px-4 py-2 text-gray-300 hover:text-white">
+                        Cancel
+                    </button>
+                    <button type="submit" name="add" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        Add Vaccine
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Vaccine Modal -->
+    <div id="editModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 overflow-y-auto">
+        <div class="bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-bold text-white">Edit Vaccine</h3>
+                <button onclick="closeModal('editModal')" class="text-gray-400 hover:text-white">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form method="POST" class="space-y-4">
+                <input type="hidden" id="edit_id" name="id">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label for="edit_name" class="block text-sm font-medium text-gray-300 mb-1">Vaccine Name</label>
+                        <input type="text" id="edit_name" name="name" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" readonly>
+                    </div>
+                    <div>
+                        <label for="edit_target_disease" class="block text-sm font-medium text-gray-300 mb-1">Target Disease</label>
+                        <input type="text" id="edit_target_disease" name="target_disease" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="edit_manufacturer" class="block text-sm font-medium text-gray-300 mb-1">Manufacturer</label>
+                        <input type="text" id="edit_manufacturer" name="manufacturer" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="edit_batch_number" class="block text-sm font-medium text-gray-300 mb-1">Batch Number</label>
+                        <input type="text" id="edit_batch_number" name="batch_number" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="edit_quantity" class="block text-sm font-medium text-gray-300 mb-1">Quantity</label>
+                        <input type="number" id="edit_quantity" name="quantity" min="0" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="edit_expiry_date" class="block text-sm font-medium text-gray-300 mb-1">Expiry Date</label>
+                        <input type="date" id="edit_expiry_date" name="expiry_date" required class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="edit_max_doses" class="block text-sm font-medium text-gray-300 mb-1">Maximum Doses</label>
+                        <input type="number" id="edit_max_doses" name="max_doses" min="1" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="edit_administration_method" class="block text-sm font-medium text-gray-300 mb-1">Administration Method</label>
+                        <input type="text" id="edit_administration_method" name="administration_method" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="edit_dosage" class="block text-sm font-medium text-gray-300 mb-1">Dosage</label>
+                        <input type="text" id="edit_dosage" name="dosage" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                </div>
+                <div class="space-y-4">
+                    <div>
+                        <label for="edit_storage_requirements" class="block text-sm font-medium text-gray-300 mb-1">Storage Requirements</label>
+                        <textarea id="edit_storage_requirements" name="storage_requirements" rows="2" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+                    <div>
+                        <label for="edit_contraindications" class="block text-sm font-medium text-gray-300 mb-1">Contraindications</label>
+                        <textarea id="edit_contraindications" name="contraindications" rows="2" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+                    <div>
+                        <label for="edit_side_effects" class="block text-sm font-medium text-gray-300 mb-1">Side Effects</label>
+                        <textarea id="edit_side_effects" name="side_effects" rows="2" class="w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-4 mt-6">
+                    <button type="button" onclick="closeModal('editModal')" class="px-4 py-2 text-gray-300 hover:text-white">
+                        Cancel
+                    </button>
+                    <button type="submit" name="update" class="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700">
+                        Update Vaccine
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
     <script>
-        function openModal(modalId, id) {
+        function openModal(modalId) {
             document.getElementById(modalId).classList.remove('hidden');
             document.getElementById(modalId).classList.add('flex');
-            
-            if (id) {
-                document.getElementById(modalId === 'deleteModal' ? 'delete_id' : 'edit_id').value = id;
-            }
+            document.body.classList.add('overflow-hidden');
         }
 
         function closeModal(modalId) {
             document.getElementById(modalId).classList.remove('flex');
             document.getElementById(modalId).classList.add('hidden');
+            document.body.classList.remove('overflow-hidden');
         }
         
-        function openEditModal(id, batch_number, quantity, expiry_date, manufacturer) {
+        function openEditModal(id, name, batch_number, quantity, expiry_date, manufacturer, target_disease, max_doses, administration_method, dosage, storage_requirements, contraindications, side_effects) {
             document.getElementById('edit_id').value = id;
+            document.getElementById('edit_name').value = name;
+            document.getElementById('edit_target_disease').value = target_disease;
             document.getElementById('edit_batch_number').value = batch_number;
             document.getElementById('edit_quantity').value = quantity;
             document.getElementById('edit_expiry_date').value = expiry_date;
             document.getElementById('edit_manufacturer').value = manufacturer;
+            document.getElementById('edit_max_doses').value = max_doses;
+            document.getElementById('edit_administration_method').value = administration_method;
+            document.getElementById('edit_dosage').value = dosage;
+            document.getElementById('edit_storage_requirements').value = storage_requirements;
+            document.getElementById('edit_contraindications').value = contraindications;
+            document.getElementById('edit_side_effects').value = side_effects;
             openModal('editModal');
         }
 
@@ -572,50 +643,30 @@ $vaccines = getAllVaccines();
             }
         }
 
-        // Auto-dismiss alerts with different timings
+        // Initialize when DOM is loaded
         document.addEventListener('DOMContentLoaded', function() {
-            // Get all alerts
-            const successAlerts = document.querySelectorAll('.success-alert');
-            const errorAlerts = document.querySelectorAll('.error-alert');
-            
-            // Handle success alerts (2 seconds)
-            successAlerts.forEach(function(alert) {
-                setTimeout(function() {
-                    alert.style.display = 'none';
-                }, 2000); // 2 seconds for success alerts
-            });
-            
-            // Handle error alerts (5 seconds)
-            errorAlerts.forEach(function(alert) {
-                setTimeout(function() {
-                    alert.style.display = 'none';
-                }, 5000); // 5 seconds for error alerts
-            });
-        });
+            // Handle success alerts
+            const successAlert = document.getElementById('successAlert');
+            if (successAlert) {
+                setTimeout(() => {
+                    successAlert.style.opacity = '0';
+                    successAlert.style.visibility = 'hidden';
+                    setTimeout(() => {
+                        successAlert.style.display = 'none';
+                    }, 300);
+                }, 2000);
+            }
 
-        document.addEventListener('DOMContentLoaded', function() {
-            const inventoryForm = document.getElementById('addInventoryForm');
-            if (inventoryForm) {
-                inventoryForm.addEventListener('submit', function(e) {
-                    console.log('Form submission triggered');
-                    
-                    // Validate form data
-                    const vaccine_name = document.getElementById('vaccine_name').value.trim();
-                    const batch_number = document.getElementById('batch_number').value.trim();
-                    const quantity = document.getElementById('quantity').value;
-                    const expiry_date = document.getElementById('expiry_date').value;
-                    
-                    console.log('Form data:', {
-                        vaccine_name,
-                        batch_number,
-                        quantity,
-                        expiry_date
-                    });
-                    
-                    // Let form submit normally
-                });
-            } else {
-                console.error('Inventory form not found');
+            // Handle error alerts
+            const errorAlert = document.getElementById('errorAlert');
+            if (errorAlert) {
+                setTimeout(() => {
+                    errorAlert.style.opacity = '0';
+                    errorAlert.style.visibility = 'hidden';
+                    setTimeout(() => {
+                        errorAlert.style.display = 'none';
+                    }, 300);
+                }, 5000);
             }
         });
     </script>

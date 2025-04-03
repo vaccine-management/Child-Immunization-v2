@@ -31,7 +31,8 @@ try {
     $displayName = $_SESSION['user']['email'];
 }
 
-$profileImage = $_SESSION['user']['profile_image'] ?? null;
+// Fix the boolean offset error by ensuring user array exists and profile_image is accessible
+$profileImage = isset($_SESSION['user']) && isset($_SESSION['user']['profile_image']) ? $_SESSION['user']['profile_image'] : null;
 ?>
 <!-- Fixed Navbar -->
 <nav class="fixed top-0 left-0 right-0 bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 border-b border-gray-700 z-50 shadow-lg">

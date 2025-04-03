@@ -65,12 +65,25 @@ if ($age->y > 0) {
 
 // Fetch vaccination records
 $stmt = $conn->prepare("
-    SELECT v.*, vac.name as vaccine_name, a.scheduled_date
+    SELECT 
+        v.*, 
+        vac.name as vaccine_name,
+        vac.target_disease,
+        vac.administration_method,
+        vac.dosage,
+        u.username as administered_by_name
     FROM vaccinations v
-    JOIN vaccines vac ON v.vaccine_id = vac.id
-    LEFT JOIN appointments a ON v.appointment_id = a.id
+    LEFT JOIN vaccines vac ON v.vaccine_id = vac.id
+    LEFT JOIN users u ON v.administered_by = u.id
     WHERE v.child_id = :child_id 
-    ORDER BY v.administered_date DESC, a.scheduled_date DESC
+    ORDER BY 
+        CASE v.status 
+            WHEN 'Administered' THEN 1 
+            WHEN 'Scheduled' THEN 2 
+            ELSE 3 
+        END,
+        v.administered_date DESC, 
+        v.scheduled_date ASC
 ");
 $stmt->bindParam(':child_id', $childId);
 $stmt->execute();
@@ -82,10 +95,10 @@ $availableVaccines = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Get taken vaccines for this child
 $stmt = $conn->prepare("
-    SELECT vaccine_name, dose_number 
-    FROM vaccinations 
-    WHERE child_id = ? AND status = 'Administered'
-    ORDER BY vaccine_name, dose_number
+    SELECT v.vaccine_name, v.dose_number 
+    FROM vaccinations v
+    WHERE v.child_id = ? AND v.status = 'Administered'
+    ORDER BY v.vaccine_name, v.dose_number
 ");
 $stmt->execute([$childId]);
 $takenVaccines = [];
@@ -115,7 +128,7 @@ function isVaccineFullyAdministered($conn, $childId, $vaccineName) {
     $stmt = $conn->prepare("
         SELECT max_doses 
         FROM vaccines 
-        WHERE vaccine_name = :vaccine_name
+        WHERE name = :vaccine_name
     ");
     $stmt->execute([':vaccine_name' => $vaccineName]);
     $maxDoses = $stmt->fetchColumn();
@@ -123,9 +136,10 @@ function isVaccineFullyAdministered($conn, $childId, $vaccineName) {
     if (!$maxDoses) {
         // If vaccine not found in vaccines table, try vaccine_schedule
         $stmt = $conn->prepare("
-            SELECT MAX(dose_number) as max_doses 
-            FROM vaccine_schedule 
-            WHERE vaccine_name = :vaccine_name
+            SELECT MAX(vs.dose_number) as max_doses 
+            FROM vaccine_schedule vs
+            JOIN vaccines v ON vs.vaccine_id = v.id
+            WHERE v.name = :vaccine_name
         ");
         $stmt->execute([':vaccine_name' => $vaccineName]);
         $maxDoses = $stmt->fetchColumn();
@@ -134,10 +148,10 @@ function isVaccineFullyAdministered($conn, $childId, $vaccineName) {
     // Get the number of administered doses
     $stmt = $conn->prepare("
         SELECT COUNT(*) 
-        FROM vaccinations 
-        WHERE child_id = :child_id 
-        AND vaccine_name = :vaccine_name 
-        AND status = 'Administered'
+        FROM vaccinations v
+        WHERE v.child_id = :child_id 
+        AND v.vaccine_name = :vaccine_name 
+        AND v.status = 'Administered'
     ");
     $stmt->execute([
         ':child_id' => $childId,
@@ -198,7 +212,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             // Look up the max doses for this vaccine
-            $stmt = $conn->prepare("SELECT max_doses FROM vaccines WHERE vaccine_name = :vaccine_name");
+            $stmt = $conn->prepare("SELECT max_doses FROM vaccines WHERE name = :vaccine_name");
             $stmt->execute([':vaccine_name' => $vaccineName]);
             $maxDoses = $stmt->fetchColumn();
             
@@ -217,10 +231,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             // Check if the vaccine is already scheduled
             $stmt = $conn->prepare("
-                SELECT v.child_id, vac.name as vaccine_name, v.dose_number, a.scheduled_date
+                SELECT v.child_id, vac.name as vaccine_name, v.dose_number, v.scheduled_date
                 FROM vaccinations v
                 JOIN vaccines vac ON v.vaccine_id = vac.id
-                JOIN appointments a ON v.appointment_id = a.id
                 WHERE v.child_id = :child_id 
                 AND vac.name = :vaccine_name 
                 AND v.dose_number = :dose_number 
@@ -239,7 +252,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt = $conn->prepare("UPDATE vaccinations 
                                        SET administered_date = :administered_date, 
                                            status = 'Administered',
-                                           notes = :notes
+                                           notes = :notes,
+                                           vaccine_id = (SELECT id FROM vaccines WHERE name = :vaccine_name),
+                                           administered_by = :administered_by
                                        WHERE child_id = :child_id
                                        AND vaccine_name = :vaccine_name
                                        AND dose_number = :dose_number");
@@ -248,7 +263,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ':notes' => $notes,
                     ':child_id' => $childId,
                     ':vaccine_name' => $vaccineName,
-                    ':dose_number' => $doseNumber
+                    ':dose_number' => $doseNumber,
+                    ':administered_by' => $_SESSION['user']['id']
                 ]);
                 $debug_log[] = "Updated vaccination status: " . ($result ? "Success" : "Failed");
                 
@@ -281,7 +297,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // Update appointment_vaccines status
                     $stmt = $conn->prepare("
                         UPDATE appointment_vaccines 
-                        SET status = 'completed' 
+                        SET status = 'administered' 
                         WHERE appointment_id = :appointment_id 
                         AND vaccine_id = (SELECT id FROM vaccines WHERE name = :vaccine_name)
                         AND dose_number = :dose_number
@@ -296,7 +312,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // Check all vaccines for this appointment
                     $stmt = $conn->prepare("
                         SELECT COUNT(*) as total, 
-                               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed 
+                               SUM(CASE WHEN status = 'administered' THEN 1 ELSE 0 END) as completed 
                         FROM appointment_vaccines 
                         WHERE appointment_id = :appointment_id
                     ");
@@ -304,13 +320,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $counts = $stmt->fetch(PDO::FETCH_ASSOC);
                     $debug_log[] = "Checked appointment completion: Total: {$counts['total']}, Completed: {$counts['completed']}";
                     
-                    // Update appointment status - note the correct ENUM value 'partially_completed'
+                    // Update appointment status - use values valid in the appointments table
                     $appointmentStatus = 'scheduled';
                     if ($counts['completed'] > 0) {
                         if ($counts['completed'] == $counts['total']) {
                             $appointmentStatus = 'completed';
                         } else {
-                            $appointmentStatus = 'partially_completed';
+                            $appointmentStatus = 'scheduled';  // Changed from partially_completed to a valid ENUM value
                         }
                     }
                     $debug_log[] = "Setting appointment status to: $appointmentStatus";
@@ -351,9 +367,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Insert record for the vaccine as "Administered"
                 $stmt = $conn->prepare("
                     INSERT INTO vaccinations (
-                        child_id, vaccine_name, dose_number, administered_date, status, notes
+                        child_id, 
+                        vaccine_id, 
+                        vaccine_name, 
+                        dose_number, 
+                        administered_date, 
+                        administered_by,
+                        status, 
+                        notes
                     ) VALUES (
-                        :child_id, :vaccine_name, :dose_number, :administered_date, 'Administered', :notes
+                        :child_id, 
+                        (SELECT id FROM vaccines WHERE name = :vaccine_name), 
+                        :vaccine_name, 
+                        :dose_number, 
+                        :administered_date, 
+                        :administered_by,
+                        'Administered', 
+                        :notes
                     )
                 ");
                 $result = $stmt->execute([
@@ -361,6 +391,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ':vaccine_name' => $vaccineName,
                     ':dose_number' => $doseNumber,
                     ':administered_date' => $dateTaken,
+                    ':administered_by' => $_SESSION['user']['id'],
                     ':notes' => $notes
                 ]);
                 $debug_log[] = "Created vaccination record: " . ($result ? "Success" : "Failed");
@@ -368,9 +399,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Link to appointment_vaccines
                 $stmt = $conn->prepare("
                     INSERT INTO appointment_vaccines (
-                        appointment_id, vaccine_name, dose_number, status
+                        appointment_id, vaccine_id, vaccine_name, dose_number, status
                     ) VALUES (
-                        :appointment_id, :vaccine_name, :dose_number, 'completed'
+                        :appointment_id, 
+                        (SELECT id FROM vaccines WHERE name = :vaccine_name),
+                        :vaccine_name, 
+                        :dose_number, 
+                        'administered'
                     )
                 ");
                 
@@ -385,6 +420,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Commit the transaction
             $conn->commit();
             $debug_log[] = "Transaction committed successfully";
+            
+            // Update vaccine inventory quantity
+            try {
+                // Get the vaccine ID
+                $stmt = $conn->prepare("SELECT id FROM vaccines WHERE name = :vaccine_name");
+                $stmt->execute([':vaccine_name' => $vaccineName]);
+                $vaccineId = $stmt->fetchColumn();
+                
+                if ($vaccineId) {
+                    // Decrement the quantity in vaccines table
+                    $stmt = $conn->prepare("
+                        UPDATE vaccines 
+                        SET quantity = GREATEST(quantity - 1, 0) 
+                        WHERE id = :vaccine_id
+                    ");
+                    $stmt->execute([':vaccine_id' => $vaccineId]);
+                    $debug_log[] = "Updated vaccine quantity for ID: $vaccineId";
+                }
+            } catch (Exception $e) {
+                // Log error but don't stop the process
+                error_log("Warning: Failed to update vaccine quantity: " . $e->getMessage());
+                $debug_log[] = "Warning: Failed to update vaccine quantity: " . $e->getMessage();
+            }
             
             // Refresh the page data
             header("Location: child_profile.php?id=$childId&success=1&vaccine=$vaccineName&dose=$doseNumber");
@@ -483,19 +541,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Create the vaccination record with appointment_id
             $stmt = $conn->prepare("
                 INSERT INTO vaccinations (
-                    child_id, vaccine_id, dose_number, appointment_id, inventory_id, administered_date, administered_by, status, notes
+                    child_id, vaccine_id, vaccine_name, dose_number, scheduled_date, status, notes
                 ) VALUES (
-                    :child_id, :vaccine_id, :dose_number, :appointment_id, :inventory_id, :administered_date, :administered_by, 'Scheduled', :notes
+                    :child_id, :vaccine_id, :vaccine_name, :dose_number, :scheduled_date, 'Scheduled', :notes
                 )
             ");
             $stmt->execute([
                 ':child_id' => $childId,
                 ':vaccine_id' => $vaccineId,
+                ':vaccine_name' => $vaccineName,
                 ':dose_number' => $doseNumber,
-                ':appointment_id' => $appointmentId,
-                ':inventory_id' => $inventoryId,
-                ':administered_date' => $scheduledDate, // Using scheduled date as administered date for now
-                ':administered_by' => $_SESSION['user']['id'], // Current user
+                ':scheduled_date' => $scheduledDate,
                 ':notes' => $notes
             ]);
             
@@ -733,7 +789,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Update the appointment_vaccines table
             $appointmentStmt = $conn->prepare("
                 UPDATE appointment_vaccines 
-                SET status = 'completed' 
+                SET status = 'administered' 
                 WHERE vaccine_name = :vaccine_name 
                 AND dose_number = :dose_number 
                 AND appointment_id IN (
@@ -766,9 +822,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 if (isset($_GET['success']) && $_GET['success'] == '1') {
     // Refresh the takenVaccines data 
     $stmt = $conn->prepare("
-        SELECT vaccine_name, dose_number 
-        FROM vaccinations 
-        WHERE child_id = :child_id AND status = 'Administered'
+        SELECT v.vaccine_name, v.dose_number 
+        FROM vaccinations v
+        WHERE v.child_id = :child_id AND v.status = 'Administered'
     ");
     $stmt->execute([':child_id' => $childId]);
     $takenVaccinesRaw = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -1448,7 +1504,14 @@ if (isset($_GET['success'])) {
                             <?php endif; ?>
                             
                             <?php foreach ($vaccinations as $vaccination): ?>
-                            <tr class="hover:bg-gray-700/20 transition-colors duration-150 <?php echo $vaccination['status'] === 'Administered' ? 'bg-green-900/10' : ''; ?>">
+                            <tr class="hover:bg-gray-700/20 transition-colors duration-150 
+                                <?php 
+                                    if ($vaccination['status'] === 'Administered') {
+                                        echo 'bg-green-900/10';
+                                    } elseif ($vaccination['status'] === 'Scheduled') {
+                                        echo 'bg-blue-900/10';
+                                    }
+                                ?>">
                                 <td class="py-4 px-6 text-white font-medium">
                                     <?php echo htmlspecialchars($vaccination['vaccine_name']); ?>
                                     <span class="text-xs text-gray-400 ml-1">(Dose <?php echo htmlspecialchars($vaccination['dose_number']); ?>)</span>
@@ -1458,9 +1521,13 @@ if (isset($_GET['success'])) {
                                         <span class="px-3 py-1 rounded-full text-xs font-medium bg-green-500/10 text-green-400 border border-green-500/20">
                                             Completed
                                         </span>
+                                    <?php elseif ($vaccination['status'] === 'Scheduled'): ?>
+                                        <span class="px-3 py-1 rounded-full text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                                            Scheduled
+                                        </span>
                                     <?php else: ?>
                                         <span class="px-3 py-1 rounded-full text-xs font-medium bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
-                                            Scheduled
+                                            <?php echo htmlspecialchars($vaccination['status']); ?>
                                         </span>
                                     <?php endif; ?>
                                 </td>
@@ -1469,11 +1536,22 @@ if (isset($_GET['success'])) {
                                         $date = $vaccination['status'] === 'Administered' 
                                               ? $vaccination['administered_date'] 
                                               : $vaccination['scheduled_date'];
-                                    echo date('M d, Y', strtotime($date));
-                                ?>
+                                        
+                                        if (!empty($date)) {
+                                            echo date('M d, Y', strtotime($date));
+                                        } else {
+                                            echo '-';
+                                        }
+                                    ?>
                                 </td>
                                 <td class="py-4 px-6 text-gray-300">
-                                    <?php echo $vaccination['formatted_time'] ?? '-'; ?>
+                                    <?php 
+                                        if (!empty($vaccination['scheduled_time'])) {
+                                            echo date('h:i A', strtotime($vaccination['scheduled_time']));
+                                        } else {
+                                            echo '-';
+                                        }
+                                    ?>
                                 </td>
                                 <td class="py-4 px-6 text-gray-300">
                                     <?php echo !empty($vaccination['notes']) ? htmlspecialchars($vaccination['notes']) : '-'; ?>
