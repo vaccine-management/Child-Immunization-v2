@@ -4,7 +4,7 @@ date_default_timezone_set('Africa/Nairobi');
 $host = 'localhost';
 $dbname = 'immunization_system';
 $user = 'root'; 
-$password_db = ''; 
+$password_db = '1234218@Nanjila22'; 
 
 try {
     // Connect to MySQL

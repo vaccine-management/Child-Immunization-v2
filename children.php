@@ -303,37 +303,39 @@ if (!empty($upcomingVaccines)) {
                         
                         // Create appointments for each date
                         foreach ($groupedVaccinesByDate as $appointmentDate => $vaccines) {
-                            // Skip past dates - only schedule future appointments
-                            $today = date('Y-m-d');
-                            if ($appointmentDate < $today) {
-                                // For vaccines that should have been taken already (e.g., birth vaccines for older children)
-                                // You could either skip them or mark them as 'Missed'
-                                continue;
-                            }
-                            
-                            // Set default appointment time
-                            $appointmentTime = '08:00:00';
-                            
                             // Get the age description for the first vaccine in this group
                             $firstVaccine = $vaccines[0];
                             $ageDescription = $firstVaccine['age_value'] . ' ' . $firstVaccine['age_unit'];
                             
+                            // Set default appointment time
+                            $appointmentTime = '08:00:00';
+                            
+                            // Check if the appointment date is in the past
+                            $today = date('Y-m-d');
+                            $isPastDate = $appointmentDate < $today;
+                            
+                            // For past dates, mark as 'missed' rather than skipping
+                            $appointmentStatus = $isPastDate ? 'missed' : 'scheduled';
+                            $vaccineStatus = $isPastDate ? 'Missed' : 'Scheduled';
+                            
                             // Create a single appointment record for this date
-                            $appointmentNotes = count($vaccines) . " vaccine(s) scheduled for " . 
-                                               date('F j, Y', strtotime($appointmentDate)) . 
+                            $appointmentNotes = count($vaccines) . " vaccine(s)" . 
+                                               ($isPastDate ? " missed" : " scheduled") . 
+                                               " for " . date('F j, Y', strtotime($appointmentDate)) . 
                                                " (" . $ageDescription . ")";
                             
                             $stmt = $conn->prepare("
                                 INSERT INTO appointments (
                                     child_id, scheduled_date, status, notes
                                 ) VALUES (
-                                    :child_id, :scheduled_date, 'scheduled', :notes
+                                    :child_id, :scheduled_date, :status, :notes
                                 )
                             ");
                             
                             $stmt->execute([
                                 ':child_id' => $childID,
                                 ':scheduled_date' => $appointmentDate,
+                                ':status' => $appointmentStatus,
                                 ':notes' => $appointmentNotes
                             ]);
                             
@@ -346,7 +348,7 @@ if (!empty($upcomingVaccines)) {
                                 $doseNumber = $vaccine['dose_number'];
                                 
                                 // Create detailed notes with all available information
-                                $detailedNotes = "Scheduled " . $vaccine['age_value'] . " " . $vaccine['age_unit'];
+                                $detailedNotes = ($isPastDate ? "Missed" : "Scheduled") . " " . $vaccine['age_value'] . " " . $vaccine['age_unit'];
                                 
                                 if (!empty($vaccine['administration_method'])) {
                                     $detailedNotes .= " | Method: " . $vaccine['administration_method'];
@@ -368,6 +370,7 @@ if (!empty($upcomingVaccines)) {
                                 $vaccineStmt = $conn->prepare("
                                     INSERT INTO vaccinations (
                                         child_id, 
+                                        vaccine_id,
                                         vaccine_name, 
                                         dose_number,
                                         scheduled_date, 
@@ -376,11 +379,12 @@ if (!empty($upcomingVaccines)) {
                                         notes
                                     ) VALUES (
                                         :child_id,
+                                        (SELECT id FROM vaccines WHERE name = :vaccine_name),
                                         :vaccine_name,
                                         :dose_number, 
                                         :scheduled_date,
                                         :scheduled_time,
-                                        'Scheduled',
+                                        :status,
                                         :notes
                                     )
                                 ");
@@ -391,6 +395,7 @@ if (!empty($upcomingVaccines)) {
                                     ':dose_number' => $doseNumber,
                                     ':scheduled_date' => $appointmentDate,
                                     ':scheduled_time' => $appointmentTime,
+                                    ':status' => $vaccineStatus,
                                     ':notes' => $detailedNotes
                                 ]);
                                 
@@ -398,21 +403,24 @@ if (!empty($upcomingVaccines)) {
                                 $apptVaccineStmt = $conn->prepare("
                                     INSERT INTO appointment_vaccines (
                                         appointment_id,
+                                        vaccine_id,
                                         vaccine_name,
                                         dose_number,
                                         status
                                     ) VALUES (
                                         :appointment_id,
+                                        (SELECT id FROM vaccines WHERE name = :vaccine_name),
                                         :vaccine_name,
                                         :dose_number,
-                                        'scheduled'
+                                        :status
                                     )
                                 ");
                                 
                                 $apptVaccineStmt->execute([
                                     ':appointment_id' => $appointmentId,
                                     ':vaccine_name' => $vaccineName,
-                                    ':dose_number' => $doseNumber
+                                    ':dose_number' => $doseNumber,
+                                    ':status' => $isPastDate ? 'missed' : 'scheduled'
                                 ]);
                             }
                         }
@@ -424,122 +432,130 @@ if (!empty($upcomingVaccines)) {
                             
                             // Send SMS notification with vaccination schedule
                             try {
-                                require_once 'sms-service/sms-adapter.php';
-                                
-                                // Clean and validate phone number
-                                $phone = trim($phone);
-                                
-                                // Make sure we have a valid phone number
-                                if (empty($phone)) {
-                                    error_log("Empty phone number for child {$childID}. Cannot send SMS.");
-                                    throw new Exception("Phone number is empty");
-                                }
-                                
-                                // Add + prefix if missing (and number is numeric)
-                                if (strpos($phone, '+') !== 0 && preg_match('/^\d+$/', $phone)) {
-                                    $phone = '+' . $phone;
-                                    error_log("Added + prefix to phone number: $phone for child: $childID");
-                                }
-                                
-                                // Verify phone meets minimum requirements
-                                if (strlen($phone) < 10) {
-                                    error_log("Phone number too short: $phone for child: $childID");
-                                    throw new Exception("Phone number is too short: $phone");
-                                }
-                                
-                                // Check for non-numeric characters (except +)
-                                if (!preg_match('/^\+?\d+$/', $phone)) {
-                                    error_log("Phone contains invalid characters: $phone for child: $childID");
-                                    throw new Exception("Phone number contains invalid characters: $phone");
-                                }
-                                
-                                // Debug log all parameters we're passing to the SMS function
-                                error_log("About to send SMS with vaccination schedule - Details:");
-                                error_log("Phone: $phone");
-                                error_log("Child Name: $fullName");
-                                error_log("Guardian Name: $guardianName");
-                                error_log("Child ID: $childID");
-                                error_log("Schedule Data Count: " . count($groupedVaccinesByDate));
-                                
-                                // Make sure the schedule data is properly formatted
-                                if (empty($groupedVaccinesByDate)) {
-                                    error_log("Warning: Empty vaccination schedule for child {$childID}");
-                                }
-                                
-                                // Check that at least one date has valid vaccine data
-                                $hasValidSchedule = false;
-                                foreach ($groupedVaccinesByDate as $date => $vaccines) {
-                                    if (!empty($vaccines)) {
-                                        $hasValidSchedule = true;
-                                        break;
+                                // Check if SMS adapter file exists before requiring it
+                                if (file_exists('sms-service/sms-adapter.php')) {
+                                    require_once 'sms-service/sms-adapter.php';
+                                    
+                                    // Clean and validate phone number
+                                    $phone = trim($phone);
+                                    
+                                    // Make sure we have a valid phone number
+                                    if (empty($phone)) {
+                                        error_log("Empty phone number for child {$childID}. Cannot send SMS.");
+                                        throw new Exception("Phone number is empty");
                                     }
-                                }
-                                
-                                if (!$hasValidSchedule) {
-                                    error_log("Warning: No valid vaccines found in schedule for child {$childID}");
-                                    // Create a simple schedule so the SMS doesn't fail
-                                    $registrationDate = date('Y-m-d');
-                                    $twoMonthsLater = date('Y-m-d', strtotime('+2 months'));
-                                    $fourMonthsLater = date('Y-m-d', strtotime('+4 months'));
                                     
-                                    $groupedVaccinesByDate = [
-                                        $twoMonthsLater => [
-                                            ['vaccine_name' => 'First Vaccination', 'dose_number' => '1']
-                                        ],
-                                        $fourMonthsLater => [
-                                            ['vaccine_name' => 'Second Vaccination', 'dose_number' => '2']
-                                        ]
-                                    ];
+                                    // Add + prefix if missing (and number is numeric)
+                                    if (strpos($phone, '+') !== 0 && preg_match('/^\d+$/', $phone)) {
+                                        $phone = '+' . $phone;
+                                        error_log("Added + prefix to phone number: $phone for child: $childID");
+                                    }
                                     
-                                    error_log("Created simple schedule with " . count($groupedVaccinesByDate) . " dates");
-                                }
-                                
-                                // Use the reliable method that tries multiple approaches
-                                try {
-                                    $smsResult = sendRegistrationWithScheduleSMS_Reliable($phone, $fullName, $guardianName, $groupedVaccinesByDate, $childID);
+                                    // Verify phone meets minimum requirements
+                                    if (strlen($phone) < 10) {
+                                        error_log("Phone number too short: $phone for child: $childID");
+                                        throw new Exception("Phone number is too short: $phone");
+                                    }
                                     
-                                    // Debug logging 
-                                    error_log("SMS sending attempt result for child {$childID}: " . json_encode($smsResult));
-                                } catch (Exception $smsException) {
-                                    error_log("Exception during SMS function execution: " . $smsException->getMessage());
-                                    $smsResult = [
-                                        'status' => 'error',
-                                        'message' => 'Exception during SMS function execution: ' . $smsException->getMessage()
-                                    ];
-                                }
-                                
-                                // Set success message based on SMS result
-                                if (isset($smsResult['success']) && $smsResult['success']) {
-                                    $_SESSION['success'] = "Child successfully registered with ID: " . $childID . 
-                                        ". A detailed SMS with the vaccination schedule has been sent to " . $phone . ".";
-                                } else if (isset($smsResult['status']) && $smsResult['status'] === 'success') {
-                                    $_SESSION['success'] = "Child successfully registered with ID: " . $childID . 
-                                        ". A detailed SMS with the vaccination schedule has been sent to " . $phone . ".";
-                                } else {
-                                    // Log the error but don't prevent registration
-                                    error_log("Failed to send registration SMS for child {$childID}: " . json_encode($smsResult));
+                                    // Check for non-numeric characters (except +)
+                                    if (!preg_match('/^\+?\d+$/', $phone)) {
+                                        error_log("Phone contains invalid characters: $phone for child: $childID");
+                                        throw new Exception("Phone number contains invalid characters: $phone");
+                                    }
                                     
-                                    // Check for specific error types
-                                    if (isset($smsResult['credentialIssues']) && !empty($smsResult['credentialIssues'])) {
-                                        // API credential configuration issue
-                                        $_SESSION['success'] = "Child successfully registered with ID: " . $childID . ".";
-                                        $_SESSION['error'] = "Africa's Talking API credentials are not properly configured. SMS notification was not sent. Please update the API credentials in the .env file.";
-                                    } else if (isset($smsResult['details']) && strpos($smsResult['details'], 'API credentials') !== false) {
-                                        // Authentication failed with API
-                                        $_SESSION['success'] = "Child successfully registered with ID: " . $childID . ".";
-                                        $_SESSION['error'] = "Authentication failed with Africa's Talking API. SMS notification was not sent. Please check your credentials in the .env file.";
-                                    } else if (isset($smsResult['details']) && strpos($smsResult['details'], 'SMS service') !== false) {
-                                        // SMS service not running
-                                        $_SESSION['success'] = "Child successfully registered with ID: " . $childID . ".";
-                                        $_SESSION['warning'] = "SMS notification could not be sent: SMS service is not running. Please start the SMS service.";
+                                    // Debug log all parameters we're passing to the SMS function
+                                    error_log("About to send SMS with vaccination schedule - Details:");
+                                    error_log("Phone: $phone");
+                                    error_log("Child Name: $fullName");
+                                    error_log("Guardian Name: $guardianName");
+                                    error_log("Child ID: $childID");
+                                    error_log("Schedule Data Count: " . count($groupedVaccinesByDate));
+                                    
+                                    // Make sure the schedule data is properly formatted
+                                    if (empty($groupedVaccinesByDate)) {
+                                        error_log("Warning: Empty vaccination schedule for child {$childID}");
+                                    }
+                                    
+                                    // Check that at least one date has valid vaccine data
+                                    $hasValidSchedule = false;
+                                    foreach ($groupedVaccinesByDate as $date => $vaccines) {
+                                        if (!empty($vaccines)) {
+                                            $hasValidSchedule = true;
+                                            break;
+                                        }
+                                    }
+                                    
+                                    if (!$hasValidSchedule) {
+                                        error_log("Warning: No valid vaccines found in schedule for child {$childID}");
+                                        // Create a simple schedule so the SMS doesn't fail
+                                        $registrationDate = date('Y-m-d');
+                                        $twoMonthsLater = date('Y-m-d', strtotime('+2 months'));
+                                        $fourMonthsLater = date('Y-m-d', strtotime('+4 months'));
+                                        
+                                        $groupedVaccinesByDate = [
+                                            $twoMonthsLater => [
+                                                ['vaccine_name' => 'First Vaccination', 'dose_number' => '1']
+                                            ],
+                                            $fourMonthsLater => [
+                                                ['vaccine_name' => 'Second Vaccination', 'dose_number' => '2']
+                                            ]
+                                        ];
+                                        
+                                        error_log("Created simple schedule with " . count($groupedVaccinesByDate) . " dates");
+                                    }
+                                    
+                                    // Use the reliable method that tries multiple approaches
+                                    try {
+                                        $smsResult = sendRegistrationWithScheduleSMS_Reliable($phone, $fullName, $guardianName, $groupedVaccinesByDate, $childID);
+                                        
+                                        // Debug logging 
+                                        error_log("SMS sending attempt result for child {$childID}: " . json_encode($smsResult));
+                                    } catch (Exception $smsException) {
+                                        error_log("Exception during SMS function execution: " . $smsException->getMessage());
+                                        $smsResult = [
+                                            'status' => 'error',
+                                            'message' => 'Exception during SMS function execution: ' . $smsException->getMessage()
+                                        ];
+                                    }
+                                    
+                                    // Set success message based on SMS result
+                                    if (isset($smsResult['success']) && $smsResult['success']) {
+                                        $_SESSION['success'] = "Child successfully registered with ID: " . $childID . 
+                                            ". A detailed SMS with the vaccination schedule has been sent to " . $phone . ".";
+                                    } else if (isset($smsResult['status']) && $smsResult['status'] === 'success') {
+                                        $_SESSION['success'] = "Child successfully registered with ID: " . $childID . 
+                                            ". A detailed SMS with the vaccination schedule has been sent to " . $phone . ".";
                                     } else {
-                                        // Generic error
-                                        $_SESSION['success'] = "Child successfully registered with ID: " . $childID . ".";
-                                        $_SESSION['warning'] = "SMS notification could not be sent: " . 
-                                            (isset($smsResult['message']) ? $smsResult['message'] : 
-                                            (isset($smsResult['error']) ? $smsResult['error'] : 'Unknown error')) . 
-                                            ". Please check the SMS service logs for details.";
+                                        // Log the error but don't prevent registration
+                                        error_log("Failed to send registration SMS for child {$childID}: " . json_encode($smsResult));
+                                        
+                                        // Check for specific error types
+                                        if (isset($smsResult['credentialIssues']) && !empty($smsResult['credentialIssues'])) {
+                                            // API credential configuration issue
+                                            $_SESSION['success'] = "Child successfully registered with ID: " . $childID . ".";
+                                            $_SESSION['error'] = "Africa's Talking API credentials are not properly configured. SMS notification was not sent. Please update the API credentials in the .env file.";
+                                        } else if (isset($smsResult['details']) && strpos($smsResult['details'], 'API credentials') !== false) {
+                                            // Authentication failed with API
+                                            $_SESSION['success'] = "Child successfully registered with ID: " . $childID . ".";
+                                            $_SESSION['error'] = "Authentication failed with Africa's Talking API. SMS notification was not sent. Please check your credentials in the .env file.";
+                                        } else if (isset($smsResult['details']) && strpos($smsResult['details'], 'SMS service') !== false) {
+                                            // SMS service not running
+                                            $_SESSION['success'] = "Child successfully registered with ID: " . $childID . ".";
+                                            $_SESSION['warning'] = "SMS notification could not be sent: SMS service is not running. Please start the SMS service.";
+                                        } else {
+                                            // Generic error
+                                            $_SESSION['success'] = "Child successfully registered with ID: " . $childID . ".";
+                                            $_SESSION['warning'] = "SMS notification could not be sent: " . 
+                                                (isset($smsResult['message']) ? $smsResult['message'] : 
+                                                (isset($smsResult['error']) ? $smsResult['error'] : 'Unknown error')) . 
+                                                ". Please check the SMS service logs for details.";
+                                        }
                                     }
+                                } else {
+                                    // SMS adapter file doesn't exist, but proceed with registration
+                                    error_log("SMS adapter file not found. Skipping SMS notification for child {$childID}");
+                                    $_SESSION['success'] = "Child successfully registered with ID: " . $childID . ".";
+                                    $_SESSION['warning'] = "SMS notification service is not installed. Registration successful but no SMS was sent.";
                                 }
                             } catch (Exception $e) {
                                 error_log("Exception while sending registration SMS for child {$childID}: " . $e->getMessage());

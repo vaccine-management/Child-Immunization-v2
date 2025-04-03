@@ -84,6 +84,7 @@ try {
             email VARCHAR(255) NOT NULL UNIQUE,
             password VARCHAR(255) NOT NULL,
             role ENUM('Admin', 'Nurse') NOT NULL,
+            profile_image VARCHAR(255) NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )");
         echo "Users table created.<br>";
@@ -93,6 +94,18 @@ try {
         if ($stmt->rowCount() > 0) {
             $conn->exec("INSERT INTO users SELECT * FROM users_backup");
             echo "Users data restored from backup.<br>";
+        }
+    } else {
+        // Check if profile_image column exists in users table
+        try {
+            $stmt = $conn->query("SHOW COLUMNS FROM users LIKE 'profile_image'");
+            if ($stmt->rowCount() == 0) {
+                // profile_image column doesn't exist, add it
+                $conn->exec("ALTER TABLE users ADD COLUMN profile_image VARCHAR(255) NULL");
+                echo "Added profile_image column to users table.<br>";
+            }
+        } catch (PDOException $e) {
+            echo "Error checking/adding profile_image column: " . $e->getMessage() . "<br>";
         }
     }
     
