@@ -1,0 +1,15 @@
+{"timestamp":"2025-03-27T13:21:01.440Z","message":"SMS service started on port 3000"}
+{"level":"info","message":"SMS service running on port 3000","timestamp":"2025-03-27T13:21:01.410Z"}
+{"timestamp":"2025-03-27T13:23:22.207Z","message":"SMS service started on port 3000"}
+{"level":"info","message":"SMS service running on port 3000","timestamp":"2025-03-27T13:23:22.168Z"}
+{"timestamp":"2025-03-27T13:33:17.482Z","message":"Incoming request","method":"GET","url":"/health.","headers":{"host":"localhost:3000","connection":"keep-alive","sec-ch-ua":"\"Chromium\";v=\"134\", \"Not:A-Brand\";v=\"24\", \"Brave\";v=\"134\"","sec-ch-ua-mobile":"?0","sec-ch-ua-platform":"\"Windows\"","upgrade-insecure-requests":"1","user-agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36","accept":"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8","sec-gpc":"1","accept-language":"en-US,en;q=0.6","sec-fetch-site":"none","sec-fetch-mode":"navigate","sec-fetch-user":"?1","sec-fetch-dest":"document","accept-encoding":"gzip, deflate, br, zstd","cookie":"PHPSESSID=g0j9n2u6fbg7s9mp5u34i1df2k"}}
+{"timestamp":"2025-03-27T13:34:07.079Z","message":"Incoming request","method":"GET","url":"/health","headers":{"user-agent":"Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.2161","host":"localhost:3000","connection":"Keep-Alive"}}
+{"timestamp":"2025-03-27T13:34:07.091Z","message":"Outgoing response","statusCode":200,"responseTime":12,"body":"{\"status\":\"success\",\"message\":\"SMS service is running\"}"}
+{"timestamp":"2025-03-27T13:38:41.327Z","message":"Incoming request","method":"GET","url":"/health","headers":{"user-agent":"PostmanRuntime/7.39.1","accept":"*/*","cache-control":"no-cache","postman-token":"2c4ba7e2-1a29-493a-990c-fcbc1d280151","host":"localhost:3000","accept-encoding":"gzip, deflate, br","connection":"keep-alive"}}
+{"timestamp":"2025-03-27T13:38:41.336Z","message":"Outgoing response","statusCode":200,"responseTime":9,"body":"{\"status\":\"success\",\"message\":\"SMS service is running\"}"}
+{"timestamp":"2025-03-27T13:55:12.592Z","message":"SMS service started on port 3000"}
+{"level":"info","message":"SMS service running on port 3000","timestamp":"2025-03-27T13:55:12.558Z"}
+{"timestamp":"2025-03-28T13:23:41.691Z","message":"SMS service started on port 3000"}
+{"level":"info","message":"SMS service running on port 3000","timestamp":"2025-03-28T13:23:41.601Z"}
+{"timestamp":"2025-03-28T13:36:22.955Z","message":"SMS service started on port 3000"}
+{"level":"info","message":"SMS service running on port 3000","timestamp":"2025-03-28T13:36:22.713Z"}

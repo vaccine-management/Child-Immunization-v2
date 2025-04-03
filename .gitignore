@@ -1,9 +1,7 @@
-appointment_table.log
+.log
 # Exclude SMS configuration file with sensitive credentials
-sms_config.php
-<<<<<<< HEAD
-.qodo
-=======
-.json
+db.php
+
 node_modules
->>>>>>> 3e2ceea36e2646118f224b3c995a54c283dfe93a
+.env
+.logs

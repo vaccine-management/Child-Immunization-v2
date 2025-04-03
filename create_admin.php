@@ -5,7 +5,7 @@ include 'backend/db.php';
 // Default admin credentials
 $admin_username = 'admin';
 $admin_email = 'admin@example.com';
-$admin_password = 'admin123'; // This will be hashed
+$admin_password = 'admin123'; // This will be hashed 
 $admin_role = 'Admin';
 
 try {
