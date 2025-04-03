@@ -1,6 +1,7 @@
-appointment_table.log
+.log
 # Exclude SMS configuration file with sensitive credentials
 db.php
 
 node_modules
 .env
+.logs

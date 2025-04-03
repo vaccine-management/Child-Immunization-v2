@@ -1,0 +1,146 @@
+Array
+(
+    [0] => Array
+        (
+            [Field] => id
+            [Type] => int(11)
+            [Null] => NO
+            [Key] => PRI
+            [Default] => 
+            [Extra] => auto_increment
+        )
+
+    [1] => Array
+        (
+            [Field] => child_id
+            [Type] => varchar(50)
+            [Null] => YES
+            [Key] => MUL
+            [Default] => 
+            [Extra] => 
+        )
+
+    [2] => Array
+        (
+            [Field] => scheduled_date
+            [Type] => date
+            [Null] => NO
+            [Key] => 
+            [Default] => 
+            [Extra] => 
+        )
+
+    [3] => Array
+        (
+            [Field] => status
+            [Type] => enum('scheduled','completed','partially_completed','missed','rescheduled')
+            [Null] => YES
+            [Key] => 
+            [Default] => scheduled
+            [Extra] => 
+        )
+
+    [4] => Array
+        (
+            [Field] => notes
+            [Type] => text
+            [Null] => YES
+            [Key] => 
+            [Default] => 
+            [Extra] => 
+        )
+
+    [5] => Array
+        (
+            [Field] => created_at
+            [Type] => timestamp
+            [Null] => NO
+            [Key] => 
+            [Default] => current_timestamp()
+            [Extra] => 
+        )
+
+    [6] => Array
+        (
+            [Field] => updated_at
+            [Type] => timestamp
+            [Null] => NO
+            [Key] => 
+            [Default] => current_timestamp()
+            [Extra] => on update current_timestamp()
+        )
+
+)
+Array
+(
+    [0] => Array
+        (
+            [Field] => id
+            [Type] => int(11)
+            [Null] => NO
+            [Key] => PRI
+            [Default] => 
+            [Extra] => auto_increment
+        )
+
+    [1] => Array
+        (
+            [Field] => child_id
+            [Type] => varchar(50)
+            [Null] => YES
+            [Key] => MUL
+            [Default] => 
+            [Extra] => 
+        )
+
+    [2] => Array
+        (
+            [Field] => scheduled_date
+            [Type] => date
+            [Null] => NO
+            [Key] => 
+            [Default] => 
+            [Extra] => 
+        )
+
+    [3] => Array
+        (
+            [Field] => status
+            [Type] => enum('scheduled','completed','partially_completed','missed','rescheduled')
+            [Null] => YES
+            [Key] => 
+            [Default] => scheduled
+            [Extra] => 
+        )
+
+    [4] => Array
+        (
+            [Field] => notes
+            [Type] => text
+            [Null] => YES
+            [Key] => 
+            [Default] => 
+            [Extra] => 
+        )
+
+    [5] => Array
+        (
+            [Field] => created_at
+            [Type] => timestamp
+            [Null] => NO
+            [Key] => 
+            [Default] => current_timestamp()
+            [Extra] => 
+        )
+
+    [6] => Array
+        (
+            [Field] => updated_at
+            [Type] => timestamp
+            [Null] => NO
+            [Key] => 
+            [Default] => current_timestamp()
+            [Extra] => on update current_timestamp()
+        )
+
+)

@@ -308,7 +308,7 @@ if (!empty($upcomingVaccines)) {
                             $ageDescription = $firstVaccine['age_value'] . ' ' . $firstVaccine['age_unit'];
                             
                             // Set default appointment time
-                            $appointmentTime = '09:00:00';
+                            $appointmentTime = '08:00:00';
                             
                             // Check if the appointment date is in the past
                             $today = date('Y-m-d');
