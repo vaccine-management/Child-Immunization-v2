@@ -34,140 +34,78 @@ try {
 $profileImage = $_SESSION['user']['profile_image'] ?? null;
 ?>
 <!-- Fixed Navbar -->
-<nav class="fixed top-0 left-0 right-0 bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 border-b border-gray-700 z-50 shadow-lg">
+<nav class="fixed top-0 left-0 right-0 bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 border-b border-blue-700/30 z-50 shadow-xl">
     <!-- Main Navbar -->
     <div class="container mx-auto px-4">
         <div class="flex items-center justify-between h-16">
             <!-- Logo Section -->
             <div class="flex items-center space-x-8">
                 <!-- Mobile menu toggle button -->
-                <button id="mobile-menu-button" class="block lg:hidden text-gray-300 focus:outline-none">
+                <button id="mobile-menu-button" class="block lg:hidden text-white focus:outline-none hover:text-blue-300 transition-colors duration-200">
                     <i class="fas fa-bars text-lg"></i>
                 </button>
                 
                 <div class="flex items-center">
-                    <div class="h-10 w-10 rounded-lg overflow-hidden shadow-lg bg-blue-500/10 flex items-center justify-center ring-2 ring-blue-500/30">
-                        <i class="fas fa-heartbeat text-blue-400 text-xl"></i>
+                    <div class="h-10 w-10 rounded-full overflow-hidden shadow-lg bg-white/10 backdrop-blur-sm flex items-center justify-center ring-2 ring-blue-400/30">
+                        <i class="fas fa-heartbeat text-blue-300 text-xl"></i>
                     </div>
                     <div class="ml-3">
-                        <h1 class="text-xl font-bold bg-gradient-to-r from-white via-blue-100 to-white bg-clip-text text-transparent tracking-wide">
-                            SAFE SHOT
+                        <h1 class="text-xl font-bold bg-gradient-to-r from-white via-blue-200 to-white bg-clip-text text-transparent tracking-wide">
+                            IMMUNIZATION SYSTEM
                         </h1>
-                        <p class="text-xs text-blue-400">Healthcare Management System</p>
+                        <p class="text-xs text-blue-300">Child Immunization System</p>
                     </div>
                 </div>
-            </div>
-
-            <!-- Search Input -->
-            <div class="hidden md:flex items-center bg-gray-800/50 rounded-lg px-4 py-2 max-w-md w-1/3 ml-4">
-                <i class="fas fa-search text-gray-400 mr-2"></i>
-                <input 
-                    type="text" 
-                    placeholder="Search patients, appointments..." 
-                    class="bg-transparent border-none w-full text-sm focus:outline-none text-gray-300 placeholder-gray-500"
-                    aria-label="Search"
-                >
             </div>
 
             <!-- Right Side Controls -->
             <div class="flex items-center space-x-6">
-                <!-- Notifications -->
-                <div class="relative">
-                    <button class="relative p-2.5 rounded-lg bg-gray-700/50 hover:bg-blue-500/20 text-gray-300 hover:text-blue-400 
-                                   focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800
-                                   transition-all duration-200 group"
-                            aria-label="View notifications">
-                        <i class="fas fa-bell text-lg"></i>
-                        <!-- Notification Badge -->
-                        <span class="absolute top-1.5 right-1.5 flex h-2.5 w-2.5">
-                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                            <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
-                        </span>
-                    </button>
-
-                    <!-- Notifications Dropdown -->
-                    <div id="notificationsDropdown" class="hidden absolute right-0 mt-3 w-80 rounded-lg bg-gray-800 border border-gray-700 shadow-xl">
-                        <div class="px-4 py-3 border-b border-gray-700 bg-gradient-to-r from-gray-800 to-gray-700">
-                            <div class="flex items-center justify-between">
-                                <h3 class="text-sm font-semibold text-white">Notifications</h3>
-                                <span class="text-xs text-blue-400 hover:text-blue-300 cursor-pointer transition-colors duration-200">
-                                    Mark all as read
-                                </span>
-                            </div>
-                        </div>
-                        
-                        <!-- Notifications List -->
-                        <div class="max-h-96 overflow-y-auto">
-                            <div class="px-4 py-3 hover:bg-gray-700/50 border-b border-gray-700/50 cursor-pointer transition-all duration-200">
-                                <div class="flex items-start gap-3">
-                                    <div class="flex-shrink-0">
-                                        <div class="h-9 w-9 rounded-full bg-blue-500/10 flex items-center justify-center">
-                                            <i class="fas fa-syringe text-blue-400"></i>
-                                        </div>
-                                    </div>
-                                    <div class="flex-1 min-w-0">
-                                        <p class="text-sm text-white font-medium">Upcoming Vaccination</p>
-                                        <p class="text-xs text-gray-400 mt-0.5">Child ID #1234 is due for BCG vaccine tomorrow</p>
-                                        <p class="text-xs text-gray-500 mt-1">2 hours ago</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- View All Link -->
-                        <a href="<?php echo $baseUrl; ?>notifications.php" class="block px-4 py-3 text-sm text-center text-blue-400 hover:text-blue-300 
-                                                        border-t border-gray-700 transition-colors duration-200 bg-gray-800/50">
-                            View all notifications
-                        </a>
-                    </div>
-                </div>
-
                 <!-- Profile Dropdown -->
                 <div class="relative">
                     <button id="profileDropdown" 
-                            class="flex items-center space-x-3 bg-gray-700/50 hover:bg-blue-500/20 py-2 px-4 rounded-lg 
-                                   transition-all duration-200 group">
+                            class="flex items-center space-x-3 bg-white/5 hover:bg-blue-500/20 py-2 px-4 rounded-full 
+                                   transition-all duration-200 group border border-blue-500/20">
                         <div class="flex items-center space-x-3">
                             <?php if ($profileImage): ?>
-                                <img class="h-8 w-8 rounded-lg object-cover ring-2 ring-blue-500/30" 
+                                <img class="h-8 w-8 rounded-full object-cover ring-2 ring-blue-400/30" 
                                      src="<?php echo $baseUrl . 'uploads/profiles/' . htmlspecialchars($profileImage); ?>" 
                                      alt="Profile">
                             <?php else: ?>
-                                <div class="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 
-                                            flex items-center justify-center ring-2 ring-blue-500/30">
+                                <div class="h-8 w-8 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 
+                                            flex items-center justify-center ring-2 ring-blue-400/30">
                                     <i class="fas fa-user text-white"></i>
                                 </div>
                             <?php endif; ?>
                             <div class="flex flex-col items-start">
-                                <span class="text-sm font-medium text-white group-hover:text-blue-400 transition-colors duration-200">
+                                <span class="text-sm font-medium text-white group-hover:text-blue-200 transition-colors duration-200">
                                 <?php echo htmlspecialchars($displayName); ?>
                                 </span>
-                                <span class="text-xs text-gray-400"><?php echo $_SESSION['user']['role']; ?></span>
+                                <span class="text-xs text-blue-300"><?php echo $_SESSION['user']['role']; ?></span>
                             </div>
-                            <i class="fas fa-chevron-down text-gray-400 group-hover:text-blue-400 transition-colors duration-200"></i>
+                            <i class="fas fa-chevron-down text-blue-300 group-hover:text-blue-200 transition-colors duration-200"></i>
                         </div>
                     </button>
 
                     <!-- Profile Dropdown Menu -->
                     <div id="dropdownMenu" 
-                         class="hidden absolute right-0 mt-3 w-64 rounded-lg bg-gray-800 border border-gray-700 shadow-xl">
-                        <div class="px-4 py-3 border-b border-gray-700 bg-gradient-to-r from-gray-800 to-gray-700">
-                            <p class="text-sm text-gray-400">Signed in as</p>
-                            <p class="text-sm font-medium text-white truncate"><?php echo htmlspecialchars($displayName); ?></p>
+                         class="hidden absolute right-0 mt-3 w-64 rounded-xl bg-white shadow-2xl border border-blue-100 overflow-hidden transform transition-all duration-300 ease-in-out origin-top-right">
+                        <div class="px-4 py-3 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-blue-100">
+                            <p class="text-sm text-blue-600">Signed in as</p>
+                            <p class="text-sm font-medium text-blue-900 truncate"><?php echo htmlspecialchars($displayName); ?></p>
                         </div>
                         
                         <div class="py-1">
-                            <a href="<?php echo $baseUrl; ?>profile.php" class="group flex items-center px-4 py-2.5 text-sm text-gray-300 hover:bg-blue-500/10 
-                                                       transition-colors duration-200">
-                                <i class="fas fa-user-circle w-5 mr-3 text-gray-400 group-hover:text-blue-400"></i>
+                            <a href="<?php echo $baseUrl; ?>profile.php" class="group flex items-center px-4 py-2.5 text-sm text-blue-700 hover:bg-blue-50 
+                                                   transition-colors duration-200">
+                                <i class="fas fa-user-circle w-5 mr-3 text-blue-500 group-hover:text-blue-600"></i>
                                 Your Profile
                             </a>
                         </div>
                         
-                        <div class="py-1 border-t border-gray-700">
-                            <a href="<?php echo $baseUrl; ?>logout.php" class="group flex items-center px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 
-                                                      transition-colors duration-200">
-                                <i class="fas fa-sign-out-alt w-5 mr-3 group-hover:text-red-500"></i>
+                        <div class="py-1 border-t border-blue-100">
+                            <a href="<?php echo $baseUrl; ?>logout.php" class="group flex items-center px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 
+                                                  transition-colors duration-200">
+                                <i class="fas fa-sign-out-alt w-5 mr-3 group-hover:text-red-700"></i>
                                 Sign out
                             </a>
                         </div>
@@ -178,6 +116,65 @@ $profileImage = $_SESSION['user']['profile_image'] ?? null;
     </div>
 </nav>
 
+<!-- Mobile Menu Overlay -->
+<div id="mobile-menu-overlay" class="fixed inset-0 bg-black/50 z-40 hidden lg:hidden"></div>
+
+<!-- Mobile Menu -->
+<div id="mobile-menu" class="fixed top-16 left-0 bottom-0 w-64 bg-gradient-to-b from-blue-900 to-indigo-900 transform -translate-x-full transition-transform duration-300 ease-in-out z-40 lg:hidden overflow-y-auto">
+    <div class="px-4 py-6">
+        
+        <!-- Mobile Navigation Links -->
+        <nav>
+            <ul class="space-y-2">
+                <li>
+                    <a href="<?php echo $baseUrl; ?>dashboard.php" class="flex items-center px-3 py-2 text-blue-100 hover:bg-blue-800/50 rounded-lg transition-colors duration-200">
+                        <i class="fas fa-chart-pie w-5 mr-3 text-blue-300"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="<?php echo $baseUrl; ?>children.php" class="flex items-center px-3 py-2 text-blue-100 hover:bg-blue-800/50 rounded-lg transition-colors duration-200">
+                        <i class="fas fa-child w-5 mr-3 text-blue-300"></i>
+                        <span>Children</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="<?php echo $baseUrl; ?>appointments.php" class="flex items-center px-3 py-2 text-blue-100 hover:bg-blue-800/50 rounded-lg transition-colors duration-200">
+                        <i class="fas fa-calendar-check w-5 mr-3 text-blue-300"></i>
+                        <span>Appointments</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="<?php echo $baseUrl; ?>admin_pages/inventory.php" class="flex items-center px-3 py-2 text-blue-100 hover:bg-blue-800/50 rounded-lg transition-colors duration-200">
+                        <i class="fas fa-boxes w-5 mr-3 text-blue-300"></i>
+                        <span>Inventory</span>
+                    </a>
+                </li>
+                
+                <?php if ($_SESSION['user']['role'] === 'admin'): ?>
+                <li class="pt-4 pb-2">
+                    <div class="px-3">
+                        <p class="text-xs font-semibold text-blue-300 uppercase tracking-wider">Administration</p>
+                    </div>
+                </li>
+                <li>
+                    <a href="<?php echo $baseUrl; ?>admin_pages/users.php" class="flex items-center px-3 py-2 text-blue-100 hover:bg-blue-800/50 rounded-lg transition-colors duration-200">
+                        <i class="fas fa-users w-5 mr-3 text-blue-300"></i>
+                        <span>Users</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="<?php echo $baseUrl; ?>admin_pages/send_sms.php" class="flex items-center px-3 py-2 text-blue-100 hover:bg-blue-800/50 rounded-lg transition-colors duration-200">
+                        <i class="fas fa-sms w-5 mr-3 text-blue-300"></i>
+                        <span>Send SMS</span>
+                    </a>
+                </li>
+                <?php endif; ?>
+            </ul>
+        </nav>
+    </div>
+</div>
+
 <script>
 // DOM Elements
 const elements = {
@@ -186,7 +183,9 @@ const elements = {
     notificationBtn: document.querySelector('[aria-label="View notifications"]'),
     notificationsDropdown: document.getElementById('notificationsDropdown'),
     searchInput: document.querySelector('input[aria-label="Search"]'),
-    mobileMenuButton: document.getElementById('mobile-menu-button')
+    mobileMenuButton: document.getElementById('mobile-menu-button'),
+    mobileMenu: document.getElementById('mobile-menu'),
+    mobileMenuOverlay: document.getElementById('mobile-menu-overlay')
 };
 
 // Animation Classes
@@ -201,12 +200,27 @@ const utils = {
     toggleDropdownVisibility: function(dropdown, show) {
         if (show) {
             dropdown.classList.remove(classes.hidden);
-            dropdown.classList.add(...classes.visible);
-            dropdown.classList.remove(...classes.invisible);
+            setTimeout(() => {
+                dropdown.classList.add(...classes.visible);
+                dropdown.classList.remove(...classes.invisible);
+            }, 10);
         } else {
-            dropdown.classList.add(classes.hidden);
             dropdown.classList.remove(...classes.visible);
             dropdown.classList.add(...classes.invisible);
+            setTimeout(() => {
+                dropdown.classList.add(classes.hidden);
+            }, 200);
+        }
+    },
+    toggleMobileMenu: function(show) {
+        if (show) {
+            elements.mobileMenu.classList.remove('-translate-x-full');
+            elements.mobileMenu.classList.add('translate-x-0');
+            elements.mobileMenuOverlay.classList.remove('hidden');
+        } else {
+            elements.mobileMenu.classList.remove('translate-x-0');
+            elements.mobileMenu.classList.add('-translate-x-full');
+            elements.mobileMenuOverlay.classList.add('hidden');
         }
     }
 };
@@ -217,76 +231,78 @@ const handlers = {
         event.stopPropagation();
         const isHidden = elements.dropdownMenu.classList.contains(classes.hidden);
         utils.toggleDropdownVisibility(elements.dropdownMenu, isHidden);
+        
+        // Close notifications dropdown if open
+        if (!elements.notificationsDropdown.classList.contains(classes.hidden)) {
+            utils.toggleDropdownVisibility(elements.notificationsDropdown, false);
+        }
     },
 
     notificationClick: function(event) {
         event.stopPropagation();
-        elements.notificationsDropdown.classList.toggle(classes.hidden);
+        const isHidden = elements.notificationsDropdown.classList.contains(classes.hidden);
+        utils.toggleDropdownVisibility(elements.notificationsDropdown, isHidden);
+        
+        // Close profile dropdown if open
+        if (!elements.dropdownMenu.classList.contains(classes.hidden)) {
+            utils.toggleDropdownVisibility(elements.dropdownMenu, false);
+        }
     },
 
     searchShortcut: function(event) {
         if ((event.ctrlKey || event.metaKey) && event.key === 'k') {
             event.preventDefault();
-            elements.searchInput.focus();
+            elements.searchInput?.focus();
         }
     },
 
     documentClick: function(event) {
-        // Close profile dropdown if clicking outside
+        // Close dropdowns when clicking outside
         if (!elements.profileDropdown.contains(event.target)) {
             utils.toggleDropdownVisibility(elements.dropdownMenu, false);
         }
-
-        // Close notifications dropdown if clicking outside
+        
         if (!elements.notificationBtn.contains(event.target)) {
-            elements.notificationsDropdown.classList.add(classes.hidden);
+            utils.toggleDropdownVisibility(elements.notificationsDropdown, false);
         }
     },
     
-    mobileMenuClick: function(event) {
-        // Toggle sidebar visibility on mobile
-        const sidebar = document.querySelector('#sidebar');
-        const mainContent = document.querySelector('#main-content');
-        
-        if (sidebar) {
-            // Toggle mobile classes for sidebar
-            sidebar.classList.toggle('-translate-x-full');
-            sidebar.classList.toggle('translate-x-0');
-            sidebar.classList.toggle('w-64');
-            sidebar.classList.toggle('w-[70px]');
-            
-            // Check if sidebar is now visible or hidden
-            const isVisible = !sidebar.classList.contains('-translate-x-full');
-            
-            // Adjust main content accordingly
-            if (mainContent) {
-                if (isVisible) {
-                    mainContent.classList.add('ml-64');
-                    mainContent.classList.remove('ml-[70px]', 'ml-0');
-                } else {
-                    mainContent.classList.remove('ml-64');
-                    mainContent.classList.add('ml-0');
-                }
-            }
-        }
+    mobileMenuToggle: function(event) {
+        event.stopPropagation();
+        const isClosed = elements.mobileMenu.classList.contains('-translate-x-full');
+        utils.toggleMobileMenu(isClosed);
+    },
+    
+    mobileMenuOverlayClick: function(event) {
+        utils.toggleMobileMenu(false);
     }
 };
 
-// Initialize Event Listeners
-function initializeEventListeners() {
-    if (elements.profileDropdown) {
-        elements.profileDropdown.addEventListener('click', handlers.profileDropdownClick);
-    }
-    if (elements.notificationBtn) {
-        elements.notificationBtn.addEventListener('click', handlers.notificationClick);
-    }
-    if (elements.mobileMenuButton) {
-        elements.mobileMenuButton.addEventListener('click', handlers.mobileMenuClick);
-    }
-    document.addEventListener('keydown', handlers.searchShortcut);
-    document.addEventListener('click', handlers.documentClick);
+// Event Listeners
+if (elements.profileDropdown) {
+    elements.profileDropdown.addEventListener('click', handlers.profileDropdownClick);
 }
 
-// Initialize when DOM is fully loaded
-document.addEventListener('DOMContentLoaded', initializeEventListeners);
+if (elements.notificationBtn) {
+    elements.notificationBtn.addEventListener('click', handlers.notificationClick);
+}
+
+if (elements.mobileMenuButton) {
+    elements.mobileMenuButton.addEventListener('click', handlers.mobileMenuToggle);
+}
+
+if (elements.mobileMenuOverlay) {
+    elements.mobileMenuOverlay.addEventListener('click', handlers.mobileMenuOverlayClick);
+}
+
+document.addEventListener('keydown', handlers.searchShortcut);
+document.addEventListener('click', handlers.documentClick);
+
+// Add smooth hover effects
+const hoverElements = document.querySelectorAll('.hover\\:bg-blue-500\\/20, .hover\\:bg-blue-800\\/50');
+hoverElements.forEach(element => {
+    element.addEventListener('mouseenter', function() {
+        this.style.transition = 'all 0.2s ease-in-out';
+    });
+});
 </script>
