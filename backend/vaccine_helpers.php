@@ -788,20 +788,74 @@ function getExpiredVaccines() {
  * @param int $quantity New quantity
  * @param string $expiry_date New expiry date
  * @param string $manufacturer New manufacturer
+ * @param string $target_disease New target disease
+ * @param int $max_doses New max doses
+ * @param string $administration_method New administration method
+ * @param string $dosage New dosage
+ * @param string $storage_requirements New storage requirements
+ * @param string $contraindications New contraindications
+ * @param string $side_effects New side effects
  * @return bool Success status
  */
-function updateVaccine($id, $batch_number, $quantity, $expiry_date, $manufacturer) {
+function updateVaccine($id, $batch_number, $quantity, $expiry_date, $manufacturer, 
+                      $target_disease = null, $max_doses = null, $administration_method = null,
+                      $dosage = null, $storage_requirements = null, $contraindications = null, 
+                      $side_effects = null) {
     global $conn;
     try {
-        $stmt = $conn->prepare("
-            UPDATE vaccines 
-            SET batch_number = ?, 
-                quantity = ?, 
-                expiry_date = ?, 
-                manufacturer = ?
-            WHERE id = ?
-        ");
-        return $stmt->execute([$batch_number, $quantity, $expiry_date, $manufacturer, $id]);
+        // Build the query dynamically based on which fields are provided
+        $updateFields = [
+            'batch_number = ?',
+            'quantity = ?',
+            'expiry_date = ?',
+            'manufacturer = ?'
+        ];
+        $params = [$batch_number, $quantity, $expiry_date, $manufacturer];
+        
+        // Add optional fields if they're provided
+        if ($target_disease !== null) {
+            $updateFields[] = 'target_disease = ?';
+            $params[] = $target_disease;
+        }
+        
+        if ($max_doses !== null) {
+            $updateFields[] = 'max_doses = ?';
+            $params[] = $max_doses;
+        }
+        
+        if ($administration_method !== null) {
+            $updateFields[] = 'administration_method = ?';
+            $params[] = $administration_method;
+        }
+        
+        if ($dosage !== null) {
+            $updateFields[] = 'dosage = ?';
+            $params[] = $dosage;
+        }
+        
+        if ($storage_requirements !== null) {
+            $updateFields[] = 'storage_requirements = ?';
+            $params[] = $storage_requirements;
+        }
+        
+        if ($contraindications !== null) {
+            $updateFields[] = 'contraindications = ?';
+            $params[] = $contraindications;
+        }
+        
+        if ($side_effects !== null) {
+            $updateFields[] = 'side_effects = ?';
+            $params[] = $side_effects;
+        }
+        
+        // Add ID to params
+        $params[] = $id;
+        
+        // Create the final query
+        $query = "UPDATE vaccines SET " . implode(', ', $updateFields) . " WHERE id = ?";
+        
+        $stmt = $conn->prepare($query);
+        return $stmt->execute($params);
     } catch (PDOException $e) {
         error_log("Error updating vaccine: " . $e->getMessage());
         return false;

@@ -421,6 +421,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $conn->commit();
             $debug_log[] = "Transaction committed successfully";
             
+            // Update vaccine inventory quantity
+            try {
+                // Get the vaccine ID
+                $stmt = $conn->prepare("SELECT id FROM vaccines WHERE name = :vaccine_name");
+                $stmt->execute([':vaccine_name' => $vaccineName]);
+                $vaccineId = $stmt->fetchColumn();
+                
+                if ($vaccineId) {
+                    // Decrement the quantity in vaccines table
+                    $stmt = $conn->prepare("
+                        UPDATE vaccines 
+                        SET quantity = GREATEST(quantity - 1, 0) 
+                        WHERE id = :vaccine_id
+                    ");
+                    $stmt->execute([':vaccine_id' => $vaccineId]);
+                    $debug_log[] = "Updated vaccine quantity for ID: $vaccineId";
+                }
+            } catch (Exception $e) {
+                // Log error but don't stop the process
+                error_log("Warning: Failed to update vaccine quantity: " . $e->getMessage());
+                $debug_log[] = "Warning: Failed to update vaccine quantity: " . $e->getMessage();
+            }
+            
             // Refresh the page data
             header("Location: child_profile.php?id=$childId&success=1&vaccine=$vaccineName&dose=$doseNumber");
             exit();
