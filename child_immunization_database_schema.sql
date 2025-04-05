@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     id INT AUTO_INCREMENT PRIMARY KEY,
     child_id VARCHAR(50) NOT NULL,
     scheduled_date DATE NOT NULL,
-    scheduled_time TIME DEFAULT '09:00:00',
+    scheduled_time TIME DEFAULT '08:00:00',
     status ENUM('scheduled', 'completed', 'missed', 'rescheduled', 'cancelled') NOT NULL DEFAULT 'scheduled',
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

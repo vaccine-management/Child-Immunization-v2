@@ -91,3 +91,5 @@ Checked for appointment with date only: Found ID: 14
 Transaction rolled back
 Error: SQLSTATE[01000]: Warning: 1265 Data truncated for column 'status' at row 2
 
+2025-04-04 11:56:48 - Error: Dose 1 for Polio Vaccine has already been recorded.
+

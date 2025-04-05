@@ -5,8 +5,8 @@ use AfricasTalking\SDK\AfricasTalking;
 function sendSMS($phoneNumbers, $message) {
     // Check for environment variables first, then use fallback values
     // You should replace these values with your actual AfricasTalking credentials
-    $username = isset($_ENV['AT_USERNAME']) ? $_ENV['AT_USERNAME'] : '';
-    $apiKey = isset($_ENV['AT_API_KEY']) ? $_ENV['AT_API_KEY'] : '';
+    $username = isset($_ENV['AT_USERNAME']) ? $_ENV['AT_USERNAME'] : 'immunization';
+    $apiKey = isset($_ENV['AT_API_KEY']) ? $_ENV['AT_API_KEY'] : 'atsk_911bb1f92976a18b09274e9b45caffa714226bf83503b55371a805044b3606da2dcb4ba9';
     $shortCode = isset($_ENV['AT_SHORTCODE']) ? $_ENV['AT_SHORTCODE'] : null;
 
     // Ensure credentials are available

@@ -66,24 +66,33 @@ if ($age->y > 0) {
 // Fetch vaccination records
 $stmt = $conn->prepare("
     SELECT 
-        v.*, 
-        vac.name as vaccine_name,
+        v.child_id,
+        v.vaccine_id,
+        v.vaccine_name,
+        v.dose_number,
+        v.scheduled_date,
+        v.administered_date,
+        v.status,
+        v.notes,
+        a.scheduled_time,
         vac.target_disease,
         vac.administration_method,
         vac.dosage,
         u.username as administered_by_name
     FROM vaccinations v
     LEFT JOIN vaccines vac ON v.vaccine_id = vac.id
+    LEFT JOIN appointments a ON v.child_id = a.child_id AND v.scheduled_date = a.scheduled_date
     LEFT JOIN users u ON v.administered_by = u.id
     WHERE v.child_id = :child_id 
     ORDER BY 
         CASE v.status 
             WHEN 'Administered' THEN 1 
             WHEN 'Scheduled' THEN 2 
-            ELSE 3 
+            WHEN 'Missed' THEN 3 
+            ELSE 4 
         END,
-        v.administered_date DESC, 
-        v.scheduled_date ASC
+        v.scheduled_date ASC,
+        v.administered_date DESC
 ");
 $stmt->bindParam(':child_id', $childId);
 $stmt->execute();
@@ -1463,108 +1472,84 @@ if (isset($_GET['success'])) {
                 </div>
             </div>
 
-            <!-- Vaccination History -->
-            <div class="bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 rounded-xl p-6 transform transition-all duration-300 hover:shadow-xl hover:shadow-gray-700/5">
-                <h2 class="text-xl font-bold text-white flex items-center mb-6">
-                    <svg class="w-5 h-5 mr-2 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2H9z"/>
-                    </svg>
-                    Vaccination History
-                </h2>
+           <!-- Vaccination History -->
+<div class="bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 rounded-xl p-6 transform transition-all duration-300 hover:shadow-xl hover:shadow-gray-700/5">
+    <h2 class="text-xl font-bold text-white flex items-center mb-6">
+        <svg class="w-5 h-5 mr-2 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2H9z"/>
+        </svg>
+        Vaccination History
+    </h2>
+    
+    <div class="overflow-x-auto max-h-[500px] scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+        <table class="w-full">
+            <thead class="bg-gray-700/50 sticky top-0">
+                <tr>
+                    <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">Vaccine</th>
+                    <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">Dose</th>
+                    <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">Status</th>
+                    <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">Scheduled Date</th>
+                    <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">Scheduled Time</th>
+                    <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">Administered Date</th>
+                    <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">Administered By</th>
+                    <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">Notes</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-700/30">
+                <?php if (count($vaccinations) === 0): ?>
+                    <tr>
+                        <td colspan="8" class="py-4 px-6 text-center text-gray-400">
+                            No vaccination records found.
+                        </td>
+                    </tr>
+                <?php endif; ?>
                 
-                <div class="overflow-x-auto max-h-[500px] scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
-                    <table class="w-full">
-                        <thead class="bg-gray-700/50 sticky top-0">
-                            <tr>
-                                <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">
-                                    Vaccine Name
-                                </th>
-                                <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">
-                                    Status
-                                </th>
-                                <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">
-                                    Date
-                                </th>
-                                <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">
-                                    Time
-                                </th>
-                                <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">
-                                    Notes
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-700/30">
-                            <?php if (count($vaccinations) === 0): ?>
-                                <tr>
-                                    <td colspan="5" class="py-4 px-6 text-center text-gray-400">
-                                        No vaccination records found.
-                                    </td>
-                                </tr>
-                            <?php endif; ?>
-                            
-                            <?php foreach ($vaccinations as $vaccination): ?>
-                            <tr class="hover:bg-gray-700/20 transition-colors duration-150 
-                                <?php 
-                                    if ($vaccination['status'] === 'Administered') {
-                                        echo 'bg-green-900/10';
-                                    } elseif ($vaccination['status'] === 'Scheduled') {
-                                        echo 'bg-blue-900/10';
-                                    }
-                                ?>">
-                                <td class="py-4 px-6 text-white font-medium">
-                                    <?php echo htmlspecialchars($vaccination['vaccine_name']); ?>
-                                    <span class="text-xs text-gray-400 ml-1">(Dose <?php echo htmlspecialchars($vaccination['dose_number']); ?>)</span>
-                                </td>
-                                <td class="py-4 px-6">
-                                    <?php if ($vaccination['status'] === 'Administered'): ?>
-                                        <span class="px-3 py-1 rounded-full text-xs font-medium bg-green-500/10 text-green-400 border border-green-500/20">
-                                            Completed
-                                        </span>
-                                    <?php elseif ($vaccination['status'] === 'Scheduled'): ?>
-                                        <span class="px-3 py-1 rounded-full text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                                            Scheduled
-                                        </span>
-                                    <?php else: ?>
-                                        <span class="px-3 py-1 rounded-full text-xs font-medium bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
-                                            <?php echo htmlspecialchars($vaccination['status']); ?>
-                                        </span>
-                                    <?php endif; ?>
-                                </td>
-                                <td class="py-4 px-6 text-gray-300">
-                                    <?php 
-                                        $date = $vaccination['status'] === 'Administered' 
-                                              ? $vaccination['administered_date'] 
-                                              : $vaccination['scheduled_date'];
-                                        
-                                        if (!empty($date)) {
-                                            echo date('M d, Y', strtotime($date));
-                                        } else {
-                                            echo '-';
-                                        }
-                                    ?>
-                                </td>
-                                <td class="py-4 px-6 text-gray-300">
-                                    <?php 
-                                        if (!empty($vaccination['scheduled_time'])) {
-                                            echo date('h:i A', strtotime($vaccination['scheduled_time']));
-                                        } else {
-                                            echo '-';
-                                        }
-                                    ?>
-                                </td>
-                                <td class="py-4 px-6 text-gray-300">
-                                    <?php echo !empty($vaccination['notes']) ? htmlspecialchars($vaccination['notes']) : '-'; ?>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
+                <?php foreach ($vaccinations as $vaccination): ?>
+                <tr class="hover:bg-gray-700/20 transition-colors duration-150 
+                    <?php 
+                        echo $vaccination['status'] === 'Administered' ? 'bg-green-900/10' : 
+                            ($vaccination['status'] === 'Scheduled' ? 'bg-blue-900/10' : 
+                            ($vaccination['status'] === 'Missed' ? 'bg-red-900/10' : ''));
+                    ?>">
+                    <td class="py-4 px-6 text-white font-medium">
+                        <?php echo htmlspecialchars($vaccination['vaccine_name']); ?>
+                    </td>
+                    <td class="py-4 px-6 text-gray-300">
+                        <?php echo htmlspecialchars($vaccination['dose_number']); ?>
+                    </td>
+                    <td class="py-4 px-6">
+                        <span class="px-3 py-1 rounded-full text-xs font-medium 
+                            <?php 
+                                echo $vaccination['status'] === 'Administered' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 
+                                    ($vaccination['status'] === 'Scheduled' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 
+                                    ($vaccination['status'] === 'Missed' ? 'bg-red-900/10 text-red-400 border border-red-500/20' : 
+                                    'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'));
+                            ?>">
+                            <?php echo htmlspecialchars(ucfirst($vaccination['status'])); ?>
+                        </span>
+                    </td>
+                    <td class="py-4 px-6 text-gray-300">
+                        <?php echo $vaccination['scheduled_date'] ? date('M d, Y', strtotime($vaccination['scheduled_date'])) : '-'; ?>
+                    </td>
+                    <td class="py-4 px-6 text-gray-300">
+                        <?php echo $vaccination['scheduled_time'] ? date('h:i A', strtotime($vaccination['scheduled_time'])) : '-'; ?>
+                    </td>
+                    <td class="py-4 px-6 text-gray-300">
+                        <?php echo $vaccination['administered_date'] ? date('M d, Y', strtotime($vaccination['administered_date'])) : '-'; ?>
+                    </td>
+                    <td class="py-4 px-6 text-gray-300">
+                        <?php echo htmlspecialchars($vaccination['administered_by_name'] ?: '-'); ?>
+                    </td>
+                    <td class="py-4 px-6 text-gray-300">
+                        <?php echo htmlspecialchars($vaccination['notes'] ?: '-'); ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
     </div>
-
+</div>
     <!-- Notification -->
     <?php if (isset($_GET['success'])): ?>
     <div id="notification" 
