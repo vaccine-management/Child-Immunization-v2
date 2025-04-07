@@ -14,6 +14,8 @@ error_reporting(E_ALL);
 
 // Include database connection
 include 'backend/db.php';
+// Include the schedule next vaccine function
+include 'schedule_next_vaccine.php';
 
 // Get child ID from URL
 if (!isset($_GET['id'])) {
@@ -98,421 +100,494 @@ $stmt->bindParam(':child_id', $childId);
 $stmt->execute();
 $vaccinations = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Get vaccine options from the vaccines table
-$stmt = $conn->query("SELECT name as vaccine_name, max_doses, description, target_disease FROM vaccines ORDER BY name");
+// Group vaccinations by status for easier display
+$administeredVaccines = [];
+$scheduledVaccines = [];
+$missedVaccines = [];
+$allVaccines = [];
+
+// Also track which doses have been taken for each vaccine
+$takenVaccines = [];
+
+foreach ($vaccinations as $vaccination) {
+    $allVaccines[] = $vaccination;
+    
+    if ($vaccination['status'] === 'Administered') {
+        $administeredVaccines[] = $vaccination;
+        
+        // Track which doses have been taken
+        if (!isset($takenVaccines[$vaccination['vaccine_name']])) {
+            $takenVaccines[$vaccination['vaccine_name']] = [];
+        }
+        $takenVaccines[$vaccination['vaccine_name']][] = $vaccination['dose_number'];
+    } 
+    elseif ($vaccination['status'] === 'Scheduled') {
+        $scheduledVaccines[] = $vaccination;
+    }
+    elseif ($vaccination['status'] === 'Missed') {
+        $missedVaccines[] = $vaccination;
+    }
+}
+
+// Calculate vaccination progress
+$totalVaccines = count($allVaccines);
+$completedVaccines = count($administeredVaccines);
+$progressPercentage = $totalVaccines > 0 ? round(($completedVaccines / $totalVaccines) * 100) : 0;
+
+// Get available vaccines for dropdown
+$stmt = $conn->prepare("SELECT id, name FROM vaccines ORDER BY name");
+$stmt->execute();
 $availableVaccines = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Get taken vaccines for this child
-$stmt = $conn->prepare("
-    SELECT v.vaccine_name, v.dose_number 
-    FROM vaccinations v
-    WHERE v.child_id = ? AND v.status = 'Administered'
-    ORDER BY v.vaccine_name, v.dose_number
-");
-$stmt->execute([$childId]);
-$takenVaccines = [];
-while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-    if (!isset($takenVaccines[$row['vaccine_name']])) {
-        $takenVaccines[$row['vaccine_name']] = [];
-    }
-    $takenVaccines[$row['vaccine_name']][] = $row['dose_number'];
-}
+// Handle form submissions
+$debug_log = ["Debug log started at " . date('Y-m-d H:i:s')];
 
-// Calculate total vaccines and progress
-$totalVaccineTypes = count($availableVaccines);
-$uniqueTakenVaccineNames = count(array_keys($takenVaccines));
-$progress = ($totalVaccineTypes > 0) ? ($uniqueTakenVaccineNames / $totalVaccineTypes) * 100 : 0;
-
-// Add this at the top of your file for a one-time check of the appointments table structure
-try {
-    $tableInfo = $conn->query("DESCRIBE appointments")->fetchAll(PDO::FETCH_ASSOC);
-    file_put_contents('appointment_table.log', print_r($tableInfo, true), FILE_APPEND);
-} catch (Exception $e) {
-    file_put_contents('appointment_table.log', "Error getting table info: " . $e->getMessage(), FILE_APPEND);
-}
-
-// First, let's add a function to check if a vaccine is fully administered
-function isVaccineFullyAdministered($conn, $childId, $vaccineName) {
-    // Get the maximum doses for this vaccine from the vaccines table
-    $stmt = $conn->prepare("
-        SELECT max_doses 
-        FROM vaccines 
-        WHERE name = :vaccine_name
-    ");
-    $stmt->execute([':vaccine_name' => $vaccineName]);
-    $maxDoses = $stmt->fetchColumn();
+// Handle recording a vaccine
+if (isset($_POST['record_vaccine'])) {
+    $vaccineName = trim($_POST['vaccine_name']);
+    $doseNumber = isset($_POST['dose_number']) ? (int)trim($_POST['dose_number']) : 1;
+    $dateTaken = $_POST['date_taken'];
+    $notes = trim($_POST['notes'] ?? '');
     
-    if (!$maxDoses) {
-        // If vaccine not found in vaccines table, try vaccine_schedule
+    try {
+        // Validate inputs
+        if (empty($vaccineName) || empty($dateTaken)) {
+            throw new Exception("Vaccine name and date taken are required.");
+        }
+        
+        // Check if the date is valid (not in the future)
+        $dateObj = new DateTime($dateTaken);
+        $today = new DateTime();
+        if ($dateObj > $today) {
+            throw new Exception("Cannot record a vaccine with a future date.");
+        }
+        
+        // Check if this vaccine is scheduled and if it's before the scheduled date
         $stmt = $conn->prepare("
-            SELECT MAX(vs.dose_number) as max_doses 
-            FROM vaccine_schedule vs
-            JOIN vaccines v ON vs.vaccine_id = v.id
-            WHERE v.name = :vaccine_name
+            SELECT scheduled_date 
+            FROM vaccinations 
+            WHERE child_id = :child_id 
+            AND vaccine_name = :vaccine_name 
+            AND dose_number = :dose_number 
+            AND status = 'Scheduled'
         ");
+        $stmt->execute([
+            ':child_id' => $childId,
+            ':vaccine_name' => $vaccineName,
+            ':dose_number' => $doseNumber
+        ]);
+        $scheduledVaccine = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($scheduledVaccine) {
+            $scheduledDate = new DateTime($scheduledVaccine['scheduled_date']);
+            $today = new DateTime($dateTaken);
+            
+            // Compare dates without time
+            $scheduledDate->setTime(0, 0);
+            $today->setTime(0, 0);
+            
+            if ($today < $scheduledDate) {
+                throw new Exception("This vaccine is scheduled for " . $scheduledDate->format('Y-m-d') . ". Cannot record it before the scheduled date.");
+            }
+        }
+        
+        // Look up the max doses for this vaccine
+        $stmt = $conn->prepare("SELECT max_doses FROM vaccines WHERE name = :vaccine_name");
         $stmt->execute([':vaccine_name' => $vaccineName]);
         $maxDoses = $stmt->fetchColumn();
-    }
-    
-    // Get the number of administered doses
-    $stmt = $conn->prepare("
-        SELECT COUNT(*) 
-        FROM vaccinations v
-        WHERE v.child_id = :child_id 
-        AND v.vaccine_name = :vaccine_name 
-        AND v.status = 'Administered'
-    ");
-    $stmt->execute([
-        ':child_id' => $childId,
-        ':vaccine_name' => $vaccineName
-    ]);
-    $administeredDoses = $stmt->fetchColumn();
-    
-    return $administeredDoses >= $maxDoses;
-}
+        
+        if ($doseNumber < 1 || $doseNumber > $maxDoses) {
+            throw new Exception("Invalid dose number. This vaccine requires doses between 1 and $maxDoses.");
+        }
+        
+        // Check if this specific dose has already been recorded
+        if (isset($takenVaccines[$vaccineName]) && in_array($doseNumber, $takenVaccines[$vaccineName])) {
+            throw new Exception("Dose $doseNumber for $vaccineName has already been recorded.");
+        }
+        
+        // Start a transaction
+        $conn->beginTransaction();
+        $debug_log[] = "Transaction started";
+        
+        // Check if the vaccine is already scheduled
+        $stmt = $conn->prepare("
+            SELECT v.child_id, vac.name as vaccine_name, v.dose_number, v.scheduled_date
+            FROM vaccinations v
+            JOIN vaccines vac ON v.vaccine_id = vac.id
+            WHERE v.child_id = :child_id 
+            AND vac.name = :vaccine_name 
+            AND v.dose_number = :dose_number 
+            AND v.status = 'Scheduled'
+        ");
+        $stmt->execute([
+            ':child_id' => $childId,
+            ':vaccine_name' => $vaccineName,
+            ':dose_number' => $doseNumber
+        ]);
+        $scheduledVaccine = $stmt->fetch(PDO::FETCH_ASSOC);
+        $debug_log[] = "Checked for scheduled vaccine: " . ($scheduledVaccine ? "Found: {$scheduledVaccine['vaccine_name']} Dose {$scheduledVaccine['dose_number']}" : "Not found");
 
-// Handle form submissions
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['record_vaccine'])) {
-        $vaccineName = trim($_POST['vaccine_name']);
-        $doseNumber = isset($_POST['dose_number']) ? (int)trim($_POST['dose_number']) : 1;
-        $dateTaken = date('Y-m-d');
-        $notes = trim($_POST['notes'] ?? 'Recorded manually');
-        $error = null;
-        $debug_log = [];  // For storing debugging info
-
-        try {
-            if (empty($vaccineName)) {
-                throw new Exception("Vaccine name is required.");
-            }
-            
-            // Check if the vaccine is already fully administered
-            if (isVaccineFullyAdministered($conn, $childId, $vaccineName)) {
-                throw new Exception("This vaccine has already been fully administered and cannot be recorded again.");
-            }
-
-            // Check if this vaccine dose is scheduled and validate the date
-            $stmt = $conn->prepare("
-                SELECT scheduled_date 
-                FROM vaccinations 
-                WHERE child_id = :child_id 
-                AND vaccine_name = :vaccine_name 
-                AND dose_number = :dose_number 
-                AND status = 'Scheduled'
-            ");
-            $stmt->execute([
+        if ($scheduledVaccine) {
+            // Update the scheduled vaccine to "Administered" using the composite key
+            $stmt = $conn->prepare("UPDATE vaccinations 
+                                   SET administered_date = :administered_date, 
+                                       status = 'Administered',
+                                       notes = :notes,
+                                       vaccine_id = (SELECT id FROM vaccines WHERE name = :vaccine_name),
+                                       administered_by = :administered_by
+                                   WHERE child_id = :child_id
+                                   AND vaccine_name = :vaccine_name
+                                   AND dose_number = :dose_number");
+            $result = $stmt->execute([
+                ':administered_date' => $dateTaken,
+                ':notes' => $notes,
                 ':child_id' => $childId,
                 ':vaccine_name' => $vaccineName,
-                ':dose_number' => $doseNumber
+                ':dose_number' => $doseNumber,
+                ':administered_by' => $_SESSION['user']['id']
             ]);
-            $scheduledVaccine = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if ($scheduledVaccine) {
-                $scheduledDate = new DateTime($scheduledVaccine['scheduled_date']);
-                $today = new DateTime($dateTaken);
-                
-                // Compare dates without time
-                $scheduledDate->setTime(0, 0);
-                $today->setTime(0, 0);
-                
-                if ($today < $scheduledDate) {
-                    throw new Exception("This vaccine is scheduled for " . $scheduledDate->format('Y-m-d') . ". Cannot record it before the scheduled date.");
-                }
-            }
+            $debug_log[] = "Updated vaccination status: " . ($result ? "Success" : "Failed");
             
-            // Look up the max doses for this vaccine
-            $stmt = $conn->prepare("SELECT max_doses FROM vaccines WHERE name = :vaccine_name");
-            $stmt->execute([':vaccine_name' => $vaccineName]);
-            $maxDoses = $stmt->fetchColumn();
+            // Find the appointment associated with this vaccine
+            $appointmentDate = $scheduledVaccine['scheduled_date'];
             
-            if ($doseNumber < 1 || $doseNumber > $maxDoses) {
-                throw new Exception("Invalid dose number. This vaccine requires doses between 1 and $maxDoses.");
-            }
-            
-            // Check if this specific dose has already been recorded
-            if (isset($takenVaccines[$vaccineName]) && in_array($doseNumber, $takenVaccines[$vaccineName])) {
-                throw new Exception("Dose $doseNumber for $vaccineName has already been recorded.");
-            }
-            
-            // Start a transaction
-            $conn->beginTransaction();
-            $debug_log[] = "Transaction started";
-            
-            // Check if the vaccine is already scheduled
+            // Find appointment_id with only the date
             $stmt = $conn->prepare("
-                SELECT v.child_id, vac.name as vaccine_name, v.dose_number, v.scheduled_date
-                FROM vaccinations v
-                JOIN vaccines vac ON v.vaccine_id = vac.id
-                WHERE v.child_id = :child_id 
+                SELECT av.id, av.appointment_id 
+                FROM appointment_vaccines av
+                JOIN appointments a ON a.id = av.appointment_id
+                JOIN vaccines vac ON av.vaccine_id = vac.id
+                WHERE a.child_id = :child_id 
                 AND vac.name = :vaccine_name 
-                AND v.dose_number = :dose_number 
-                AND v.status = 'Scheduled'
+                AND av.dose_number = :dose_number
+                AND a.scheduled_date = :scheduled_date
             ");
             $stmt->execute([
                 ':child_id' => $childId,
                 ':vaccine_name' => $vaccineName,
-                ':dose_number' => $doseNumber
+                ':dose_number' => $doseNumber,
+                ':scheduled_date' => $appointmentDate
             ]);
-            $scheduledVaccine = $stmt->fetch(PDO::FETCH_ASSOC);
-            $debug_log[] = "Checked for scheduled vaccine: " . ($scheduledVaccine ? "Found: {$scheduledVaccine['vaccine_name']} Dose {$scheduledVaccine['dose_number']}" : "Not found");
-
-            if ($scheduledVaccine) {
-                // Update the scheduled vaccine to "Administered" using the composite key
-                $stmt = $conn->prepare("UPDATE vaccinations 
-                                       SET administered_date = :administered_date, 
-                                           status = 'Administered',
-                                           notes = :notes,
-                                           vaccine_id = (SELECT id FROM vaccines WHERE name = :vaccine_name),
-                                           administered_by = :administered_by
-                                       WHERE child_id = :child_id
-                                       AND vaccine_name = :vaccine_name
-                                       AND dose_number = :dose_number");
-                $result = $stmt->execute([
-                    ':administered_date' => $dateTaken,
-                    ':notes' => $notes,
-                    ':child_id' => $childId,
-                    ':vaccine_name' => $vaccineName,
-                    ':dose_number' => $doseNumber,
-                    ':administered_by' => $_SESSION['user']['id']
-                ]);
-                $debug_log[] = "Updated vaccination status: " . ($result ? "Success" : "Failed");
+            $appointmentData = $stmt->fetch(PDO::FETCH_ASSOC);
+            $debug_log[] = "Checked for appointment with date only: " . ($appointmentData ? "Found ID: {$appointmentData['appointment_id']}" : "Not found");
+            
+            if ($appointmentData) {
+                $appointmentId = $appointmentData['appointment_id'];
                 
-                // Find the appointment associated with this vaccine
-                $appointmentDate = $scheduledVaccine['scheduled_date'];
-                
-                // Find appointment_id with only the date
+                // Update appointment_vaccines status
                 $stmt = $conn->prepare("
-                    SELECT av.id, av.appointment_id 
-                    FROM appointment_vaccines av
-                    JOIN appointments a ON a.id = av.appointment_id
-                    JOIN vaccines vac ON av.vaccine_id = vac.id
-                    WHERE a.child_id = :child_id 
-                    AND vac.name = :vaccine_name 
-                    AND av.dose_number = :dose_number
-                    AND a.scheduled_date = :scheduled_date
+                    UPDATE appointment_vaccines 
+                    SET status = 'administered' 
+                    WHERE appointment_id = :appointment_id 
+                    AND vaccine_id = (SELECT id FROM vaccines WHERE name = :vaccine_name)
+                    AND dose_number = :dose_number
                 ");
-                $stmt->execute([
-                    ':child_id' => $childId,
-                    ':vaccine_name' => $vaccineName,
-                    ':dose_number' => $doseNumber,
-                    ':scheduled_date' => $appointmentDate
-                ]);
-                $appointmentData = $stmt->fetch(PDO::FETCH_ASSOC);
-                $debug_log[] = "Checked for appointment with date only: " . ($appointmentData ? "Found ID: {$appointmentData['appointment_id']}" : "Not found");
-                
-                if ($appointmentData) {
-                    $appointmentId = $appointmentData['appointment_id'];
-                    
-                    // Update appointment_vaccines status
-                    $stmt = $conn->prepare("
-                        UPDATE appointment_vaccines 
-                        SET status = 'administered' 
-                        WHERE appointment_id = :appointment_id 
-                        AND vaccine_id = (SELECT id FROM vaccines WHERE name = :vaccine_name)
-                        AND dose_number = :dose_number
-                    ");
-                    $result = $stmt->execute([
-                        ':appointment_id' => $appointmentId,
-                        ':vaccine_name' => $vaccineName,
-                        ':dose_number' => $doseNumber
-                    ]);
-                    $debug_log[] = "Updated appointment_vaccines: " . ($result ? "Success" : "Failed");
-                    
-                    // Check all vaccines for this appointment
-                    $stmt = $conn->prepare("
-                        SELECT COUNT(*) as total, 
-                               SUM(CASE WHEN status = 'administered' THEN 1 ELSE 0 END) as completed 
-                        FROM appointment_vaccines 
-                        WHERE appointment_id = :appointment_id
-                    ");
-                    $stmt->execute([':appointment_id' => $appointmentId]);
-                    $counts = $stmt->fetch(PDO::FETCH_ASSOC);
-                    $debug_log[] = "Checked appointment completion: Total: {$counts['total']}, Completed: {$counts['completed']}";
-                    
-                    // Update appointment status - use values valid in the appointments table
-                    $appointmentStatus = 'scheduled';
-                    if ($counts['completed'] > 0) {
-                        if ($counts['completed'] == $counts['total']) {
-                            $appointmentStatus = 'completed';
-                        } else {
-                            $appointmentStatus = 'scheduled';  // Changed from partially_completed to a valid ENUM value
-                        }
-                    }
-                    $debug_log[] = "Setting appointment status to: $appointmentStatus";
-                    
-                    // Update the appointment status (removed actual_date)
-                    $stmt = $conn->prepare("
-                        UPDATE appointments 
-                        SET status = :status
-                        WHERE id = :appointment_id
-                    ");
-                    $result = $stmt->execute([
-                        ':status' => $appointmentStatus,
-                        ':appointment_id' => $appointmentId
-                    ]);
-                    $debug_log[] = "Updated appointment: " . ($result ? "Success" : "Failed");
-                }
-            } else {
-                // For unscheduled vaccines, create a new appointment (without scheduled_time and actual_date)
-                $debug_log[] = "Creating new walk-in appointment";
-                $stmt = $conn->prepare("
-                    INSERT INTO appointments (
-                        child_id, scheduled_date, status, notes
-                    ) VALUES (
-                        :child_id, :scheduled_date, 'completed', :notes
-                    )
-                ");
-                
-                $result = $stmt->execute([
-                    ':child_id' => $childId,
-                    ':scheduled_date' => $dateTaken,
-                    ':notes' => "Walk-in vaccination: $vaccineName (Dose $doseNumber)"
-                ]);
-                $debug_log[] = "Created appointment: " . ($result ? "Success" : "Failed");
-                
-                $appointmentId = $conn->lastInsertId();
-                $debug_log[] = "New appointment ID: $appointmentId";
-                
-                // Insert record for the vaccine as "Administered"
-                $stmt = $conn->prepare("
-                    INSERT INTO vaccinations (
-                        child_id, 
-                        vaccine_id, 
-                        vaccine_name, 
-                        dose_number, 
-                        administered_date, 
-                        administered_by,
-                        status, 
-                        notes
-                    ) VALUES (
-                        :child_id, 
-                        (SELECT id FROM vaccines WHERE name = :vaccine_name), 
-                        :vaccine_name, 
-                        :dose_number, 
-                        :administered_date, 
-                        :administered_by,
-                        'Administered', 
-                        :notes
-                    )
-                ");
-                $result = $stmt->execute([
-                    ':child_id' => $childId,
-                    ':vaccine_name' => $vaccineName,
-                    ':dose_number' => $doseNumber,
-                    ':administered_date' => $dateTaken,
-                    ':administered_by' => $_SESSION['user']['id'],
-                    ':notes' => $notes
-                ]);
-                $debug_log[] = "Created vaccination record: " . ($result ? "Success" : "Failed");
-                
-                // Link to appointment_vaccines
-                $stmt = $conn->prepare("
-                    INSERT INTO appointment_vaccines (
-                        appointment_id, vaccine_id, vaccine_name, dose_number, status
-                    ) VALUES (
-                        :appointment_id, 
-                        (SELECT id FROM vaccines WHERE name = :vaccine_name),
-                        :vaccine_name, 
-                        :dose_number, 
-                        'administered'
-                    )
-                ");
-                
                 $result = $stmt->execute([
                     ':appointment_id' => $appointmentId,
                     ':vaccine_name' => $vaccineName,
                     ':dose_number' => $doseNumber
                 ]);
-                $debug_log[] = "Created appointment_vaccines link: " . ($result ? "Success" : "Failed");
-            }
-            
-            // Commit the transaction
-            $conn->commit();
-            $debug_log[] = "Transaction committed successfully";
-            
-            // Update vaccine inventory quantity
-            try {
-                // Get the vaccine ID
-                $stmt = $conn->prepare("SELECT id FROM vaccines WHERE name = :vaccine_name");
-                $stmt->execute([':vaccine_name' => $vaccineName]);
-                $vaccineId = $stmt->fetchColumn();
+                $debug_log[] = "Updated appointment_vaccines: " . ($result ? "Success" : "Failed");
                 
-                if ($vaccineId) {
-                    // Decrement the quantity in vaccines table
-                    $stmt = $conn->prepare("
-                        UPDATE vaccines 
-                        SET quantity = GREATEST(quantity - 1, 0) 
-                        WHERE id = :vaccine_id
-                    ");
-                    $stmt->execute([':vaccine_id' => $vaccineId]);
-                    $debug_log[] = "Updated vaccine quantity for ID: $vaccineId";
+                // Check all vaccines for this appointment
+                $stmt = $conn->prepare("
+                    SELECT COUNT(*) as total, 
+                           SUM(CASE WHEN status = 'administered' THEN 1 ELSE 0 END) as completed 
+                    FROM appointment_vaccines 
+                    WHERE appointment_id = :appointment_id
+                ");
+                $stmt->execute([':appointment_id' => $appointmentId]);
+                $counts = $stmt->fetch(PDO::FETCH_ASSOC);
+                $debug_log[] = "Checked appointment completion: Total: {$counts['total']}, Completed: {$counts['completed']}";
+                
+                // Update appointment status - use values valid in the appointments table
+                $appointmentStatus = 'scheduled';
+                if ($counts['completed'] > 0) {
+                    if ($counts['completed'] == $counts['total']) {
+                        $appointmentStatus = 'completed';
+                    } else {
+                        $appointmentStatus = 'scheduled';  // Changed from partially_completed to a valid ENUM value
+                    }
                 }
-            } catch (Exception $e) {
-                // Log error but don't stop the process
-                error_log("Warning: Failed to update vaccine quantity: " . $e->getMessage());
-                $debug_log[] = "Warning: Failed to update vaccine quantity: " . $e->getMessage();
+                $debug_log[] = "Setting appointment status to: $appointmentStatus";
+                
+                // Update the appointment status (removed actual_date)
+                $stmt = $conn->prepare("
+                    UPDATE appointments 
+                    SET status = :status
+                    WHERE id = :appointment_id
+                ");
+                $result = $stmt->execute([
+                    ':status' => $appointmentStatus,
+                    ':appointment_id' => $appointmentId
+                ]);
+                $debug_log[] = "Updated appointment: " . ($result ? "Success" : "Failed");
             }
-            
-            // Refresh the page data
-            header("Location: child_profile.php?id=$childId&success=1&vaccine=$vaccineName&dose=$doseNumber");
-            exit();
-        } 
-        catch (Exception $e) {
-            // Roll back the transaction on error
-            if ($conn->inTransaction()) {
-                $conn->rollBack();
-                $debug_log[] = "Transaction rolled back";
-            }
-            $error = "Failed to record vaccine: " . $e->getMessage();
-            $debug_log[] = "Error: " . $e->getMessage();
-            
-            // Log debugging info to a file for easier troubleshooting
-            file_put_contents('vaccine_debug.log', date('Y-m-d H:i:s') . " - " . implode("\n", $debug_log) . "\n\n", FILE_APPEND);
-        }
-    }
-
-    if (isset($_POST['schedule_vaccine'])) {
-        $vaccineName = trim($_POST['vaccine_name']);
-        $doseNumber = isset($_POST['dose_number']) ? (int)trim($_POST['dose_number']) : 1;
-        $scheduledDate = $_POST['scheduled_date'];
-        $notes = trim($_POST['notes'] ?? '');
-        
-        try {
-            // Start transaction
-            $conn->beginTransaction();
-            
-            // Get vaccine_id from vaccine name
-            $stmt = $conn->prepare("SELECT id FROM vaccines WHERE name = :name");
-            $stmt->execute([':name' => $vaccineName]);
-            $vaccineData = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if (!$vaccineData) {
-                throw new Exception("Vaccine not found: $vaccineName");
-            }
-            
-            $vaccineId = $vaccineData['id'];
-            
-            // Check if this vaccine dose has already been administered
+        } else {
+            // For unscheduled vaccines, create a new appointment (without scheduled_time and actual_date)
+            $debug_log[] = "Creating new walk-in appointment";
             $stmt = $conn->prepare("
-                SELECT status 
-                FROM vaccinations 
-                WHERE child_id = :child_id 
-                AND vaccine_id = :vaccine_id 
+                INSERT INTO appointments (
+                    child_id, scheduled_date, status, notes
+                ) VALUES (
+                    :child_id, :scheduled_date, 'completed', :notes
+                )
+            ");
+            
+            $result = $stmt->execute([
+                ':child_id' => $childId,
+                ':scheduled_date' => $dateTaken,
+                ':notes' => "Walk-in vaccination: $vaccineName (Dose $doseNumber)"
+            ]);
+            $debug_log[] = "Created appointment: " . ($result ? "Success" : "Failed");
+            
+            $appointmentId = $conn->lastInsertId();
+            $debug_log[] = "New appointment ID: $appointmentId";
+            
+            // Insert record for the vaccine as "Administered"
+            $stmt = $conn->prepare("
+                INSERT INTO vaccinations (
+                    child_id, 
+                    vaccine_id, 
+                    vaccine_name, 
+                    dose_number, 
+                    administered_date, 
+                    administered_by,
+                    status, 
+                    notes
+                ) VALUES (
+                    :child_id, 
+                    (SELECT id FROM vaccines WHERE name = :vaccine_name), 
+                    :vaccine_name, 
+                    :dose_number, 
+                    :administered_date, 
+                    :administered_by,
+                    'Administered', 
+                    :notes
+                )
+            ");
+            $result = $stmt->execute([
+                ':child_id' => $childId,
+                ':vaccine_name' => $vaccineName,
+                ':dose_number' => $doseNumber,
+                ':administered_date' => $dateTaken,
+                ':administered_by' => $_SESSION['user']['id'],
+                ':notes' => $notes
+            ]);
+            $debug_log[] = "Created vaccination record: " . ($result ? "Success" : "Failed");
+            
+            // Link to appointment_vaccines
+            $stmt = $conn->prepare("
+                INSERT INTO appointment_vaccines (
+                    appointment_id, vaccine_id, vaccine_name, dose_number, status
+                ) VALUES (
+                    :appointment_id, 
+                    (SELECT id FROM vaccines WHERE name = :vaccine_name),
+                    :vaccine_name, 
+                    :dose_number, 
+                    'administered'
+                )
+            ");
+            
+            $result = $stmt->execute([
+                ':appointment_id' => $appointmentId,
+                ':vaccine_name' => $vaccineName,
+                ':dose_number' => $doseNumber
+            ]);
+            $debug_log[] = "Created appointment_vaccines link: " . ($result ? "Success" : "Failed");
+        }
+        
+        // Schedule the next vaccine automatically
+        $nextVaccine = scheduleNextVaccine($conn, $childId, $child['date_of_birth'], $vaccineName, $doseNumber);
+        if ($nextVaccine) {
+            $debug_log[] = "Automatically scheduled next vaccine: {$nextVaccine['vaccine_name']} (Dose {$nextVaccine['dose_number']}) for {$nextVaccine['scheduled_date']}";
+        } else {
+            $debug_log[] = "No next vaccine to schedule";
+        }
+        
+        // Commit the transaction
+        $conn->commit();
+        $debug_log[] = "Transaction committed successfully";
+        
+        // Update vaccine inventory quantity
+        try {
+            // Get the vaccine ID
+            $stmt = $conn->prepare("SELECT id FROM vaccines WHERE name = :vaccine_name");
+            $stmt->execute([':vaccine_name' => $vaccineName]);
+            $vaccineId = $stmt->fetchColumn();
+            
+            if ($vaccineId) {
+                // Decrement the quantity in vaccines table
+                $stmt = $conn->prepare("
+                    UPDATE vaccines 
+                    SET quantity = GREATEST(quantity - 1, 0) 
+                    WHERE id = :vaccine_id
+                ");
+                $stmt->execute([':vaccine_id' => $vaccineId]);
+                $debug_log[] = "Updated vaccine quantity for ID: $vaccineId";
+            }
+        } catch (Exception $e) {
+            // Log error but don't stop the process
+            error_log("Warning: Failed to update vaccine quantity: " . $e->getMessage());
+            $debug_log[] = "Warning: Failed to update vaccine quantity: " . $e->getMessage();
+        }
+        
+        // Refresh the page data
+        header("Location: child_profile.php?id=$childId&success=1&vaccine=$vaccineName&dose=$doseNumber");
+        exit();
+    } 
+    catch (Exception $e) {
+        // Roll back the transaction on error
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+            $debug_log[] = "Transaction rolled back";
+        }
+        $error = "Failed to record vaccine: " . $e->getMessage();
+        $debug_log[] = "Error: " . $e->getMessage();
+        
+        // Log debugging info to a file for easier troubleshooting
+        file_put_contents('vaccine_debug.log', date('Y-m-d H:i:s') . " - " . implode("\n", $debug_log) . "\n\n", FILE_APPEND);
+    }
+}
+
+// Handle scheduling a vaccine for missed appointments
+if (isset($_POST['schedule_vaccine'])) {
+    $vaccineName = trim($_POST['vaccine_name']);
+    $doseNumber = isset($_POST['dose_number']) ? (int)trim($_POST['dose_number']) : 1;
+    $scheduledDate = $_POST['scheduled_date'];
+    $notes = trim($_POST['notes'] ?? '');
+    
+    try {
+        // Start transaction
+        $conn->beginTransaction();
+        
+        // Get vaccine_id from vaccine name
+        $stmt = $conn->prepare("SELECT id FROM vaccines WHERE name = :name");
+        $stmt->execute([':name' => $vaccineName]);
+        $vaccineData = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$vaccineData) {
+            throw new Exception("Vaccine not found: $vaccineName");
+        }
+        
+        $vaccineId = $vaccineData['id'];
+        
+        // Check if this vaccine dose has already been administered
+        $stmt = $conn->prepare("
+            SELECT status 
+            FROM vaccinations 
+            WHERE child_id = :child_id 
+            AND vaccine_id = :vaccine_id 
+            AND dose_number = :dose_number
+        ");
+        $stmt->execute([
+            ':child_id' => $childId,
+            ':vaccine_id' => $vaccineId,
+            ':dose_number' => $doseNumber
+        ]);
+        $existingVaccine = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($existingVaccine) {
+            if ($existingVaccine['status'] === 'Administered') {
+                throw new Exception("This dose has already been administered and cannot be scheduled again.");
+            }
+            
+            // If it's already scheduled or missed, update it instead of creating a new one
+            $stmt = $conn->prepare("
+                UPDATE vaccinations
+                SET scheduled_date = :scheduled_date,
+                    status = 'Scheduled',
+                    notes = :notes
+                WHERE child_id = :child_id
+                AND vaccine_id = :vaccine_id
                 AND dose_number = :dose_number
+            ");
+            $stmt->execute([
+                ':child_id' => $childId,
+                ':vaccine_id' => $vaccineId,
+                ':dose_number' => $doseNumber,
+                ':scheduled_date' => $scheduledDate,
+                ':notes' => $notes
+            ]);
+            
+            // Check if there's an existing appointment for this vaccine
+            $stmt = $conn->prepare("
+                SELECT av.appointment_id
+                FROM appointment_vaccines av
+                JOIN appointments a ON av.appointment_id = a.id
+                WHERE a.child_id = :child_id
+                AND av.vaccine_id = :vaccine_id
+                AND av.dose_number = :dose_number
             ");
             $stmt->execute([
                 ':child_id' => $childId,
                 ':vaccine_id' => $vaccineId,
                 ':dose_number' => $doseNumber
             ]);
-            $existingVaccine = $stmt->fetch(PDO::FETCH_ASSOC);
+            $existingAppointment = $stmt->fetch(PDO::FETCH_ASSOC);
             
-            if ($existingVaccine) {
-                if ($existingVaccine['status'] === 'Administered') {
-                    throw new Exception("This dose has already been administered and cannot be scheduled again.");
-                }
+            if ($existingAppointment) {
+                // Update existing appointment
+                $stmt = $conn->prepare("
+                    UPDATE appointments
+                    SET scheduled_date = :scheduled_date,
+                        status = 'scheduled',
+                        notes = :notes
+                    WHERE id = :appointment_id
+                ");
+                $stmt->execute([
+                    ':appointment_id' => $existingAppointment['appointment_id'],
+                    ':scheduled_date' => $scheduledDate,
+                    ':notes' => "Rescheduled vaccination: $vaccineName (Dose $doseNumber)"
+                ]);
+                
+                // Update appointment_vaccines status
+                $stmt = $conn->prepare("
+                    UPDATE appointment_vaccines
+                    SET status = 'scheduled'
+                    WHERE appointment_id = :appointment_id
+                    AND vaccine_id = :vaccine_id
+                    AND dose_number = :dose_number
+                ");
+                $stmt->execute([
+                    ':appointment_id' => $existingAppointment['appointment_id'],
+                    ':vaccine_id' => $vaccineId,
+                    ':dose_number' => $doseNumber
+                ]);
+                
+                $appointmentId = $existingAppointment['appointment_id'];
+            } else {
+                // Create a new appointment
+                $stmt = $conn->prepare("
+                    INSERT INTO appointments (
+                        child_id, scheduled_date, status, notes
+                    ) VALUES (
+                        :child_id, :scheduled_date, 'scheduled', :notes
+                    )
+                ");
+                $stmt->execute([
+                    ':child_id' => $childId,
+                    ':scheduled_date' => $scheduledDate,
+                    ':notes' => "Scheduled vaccination: $vaccineName (Dose $doseNumber)"
+                ]);
+                $appointmentId = $conn->lastInsertId();
+                
+                // Link vaccine to appointment
+                $stmt = $conn->prepare("
+                    INSERT INTO appointment_vaccines (
+                        appointment_id, vaccine_id, vaccine_name, dose_number, status
+                    ) VALUES (
+                        :appointment_id, :vaccine_id, :vaccine_name, :dose_number, 'scheduled'
+                    )
+                ");
+                $stmt->execute([
+                    ':appointment_id' => $appointmentId,
+                    ':vaccine_id' => $vaccineId,
+                    ':vaccine_name' => $vaccineName,
+                    ':dose_number' => $doseNumber
+                ]);
             }
-            
+        } else {
             // Create the appointment first
             $stmt = $conn->prepare("
                 INSERT INTO appointments (
@@ -527,25 +602,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':notes' => "Scheduled vaccination: $vaccineName (Dose $doseNumber)"
             ]);
             $appointmentId = $conn->lastInsertId();
-            
-            // Get the first inventory item for this vaccine (this is a simplification)
-            $stmt = $conn->prepare("
-                SELECT id FROM inventory WHERE vaccine_id = :vaccine_id AND quantity > 0 LIMIT 1
-            ");
-            $stmt->execute([':vaccine_id' => $vaccineId]);
-            $inventoryData = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if (!$inventoryData) {
-                // If no inventory, create a dummy one for now
-                $stmt = $conn->prepare("
-                    INSERT INTO inventory (vaccine_id, batch_number, quantity, expiry_date)
-                    VALUES (:vaccine_id, 'TEMP-BATCH', 10, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR))
-                ");
-                $stmt->execute([':vaccine_id' => $vaccineId]);
-                $inventoryId = $conn->lastInsertId();
-            } else {
-                $inventoryId = $inventoryData['id'];
-            }
             
             // Create the vaccination record with appointment_id
             $stmt = $conn->prepare("
@@ -567,311 +623,104 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Link vaccine to appointment
             $stmt = $conn->prepare("
                 INSERT INTO appointment_vaccines (
-                    appointment_id, vaccine_id, dose_number, status
+                    appointment_id, vaccine_id, vaccine_name, dose_number, status
                 ) VALUES (
-                    :appointment_id, :vaccine_id, :dose_number, 'scheduled'
+                    :appointment_id, :vaccine_id, :vaccine_name, :dose_number, 'scheduled'
                 )
             ");
             $stmt->execute([
                 ':appointment_id' => $appointmentId,
                 ':vaccine_id' => $vaccineId,
+                ':vaccine_name' => $vaccineName,
                 ':dose_number' => $doseNumber
             ]);
-            
-            // Commit transaction
-            $conn->commit();
-            $successMessage = "Vaccination scheduled successfully.";
-            
-        } catch (Exception $e) {
-            $conn->rollBack();
-            $errorMessage = $e->getMessage();
         }
+        
+        // Commit transaction
+        $conn->commit();
+        $successMessage = "Vaccination scheduled successfully.";
+        
+        // Refresh the page data
+        header("Location: child_profile.php?id=$childId&schedule_success=1&vaccine=$vaccineName&dose=$doseNumber");
+        exit();
+        
+    } catch (Exception $e) {
+        $conn->rollBack();
+        $errorMessage = $e->getMessage();
     }
+}
 
-    if (isset($_POST['update_child'])) {
-        $fullName = trim($_POST['full_name']);
-        $birthWeight = floatval($_POST['birth_weight']);
-        $gender = trim($_POST['gender']);
-        $placeOfBirth = trim($_POST['place_of_birth']);
-        $guardianName = trim($_POST['guardian_name']);
-        $phone = trim($_POST['phone']);
-        $email = trim($_POST['email']);
-        $address = trim($_POST['address']);
-        $birthComplications = trim($_POST['birth_complications']);
-        $allergies = trim($_POST['allergies']);
-        $previousVaccinations = trim($_POST['previous_vaccinations']);
-
-        if (empty($fullName) || empty($gender) || empty($guardianName) || empty($phone)) {
-            $error = "Required fields must be filled out.";
-        } else {
-            $stmt = $conn->prepare("UPDATE children SET 
-                full_name = :full_name,
-                birth_weight = :birth_weight,
-                gender = :gender,
-                place_of_birth = :place_of_birth,
-                guardian_name = :guardian_name,
-                phone = :phone,
-                email = :email,
-                address = :address,
-                birth_complications = :birth_complications,
-                allergies = :allergies,
-                previous_vaccinations = :previous_vaccinations
-                WHERE child_id = :child_id");
-            
-            try {
-                $stmt->execute([
-                    ':full_name' => $fullName,
-                    ':birth_weight' => $birthWeight,
-                    ':gender' => $gender,
-                    ':place_of_birth' => $placeOfBirth,
-                    ':guardian_name' => $guardianName,
-                    ':phone' => $phone,
-                    ':email' => $email,
-                    ':address' => $address,
-                    ':birth_complications' => $birthComplications,
-                    ':allergies' => $allergies,
-                    ':previous_vaccinations' => $previousVaccinations,
-                    ':child_id' => $childId
-                ]);
-                header("Location: child_profile.php?id=$childId&success=3");
-                exit();
-            } catch (PDOException $e) {
-                $error = "Failed to update child details.";
-            }
-        }
-    }
-
-    if (isset($_POST['update_personal'])) {
-        $fullName = trim($_POST['full_name']);
-        $birthWeight = floatval($_POST['birth_weight']);
-        $gender = trim($_POST['gender']);
-        $placeOfBirth = trim($_POST['place_of_birth']);
-
-        if (empty($fullName) || empty($gender)) {
-            $error = "Required fields must be filled out.";
-        } else {
-            $stmt = $conn->prepare("UPDATE children SET 
-                full_name = :full_name,
-                birth_weight = :birth_weight,
-                gender = :gender,
-                place_of_birth = :place_of_birth
-                WHERE child_id = :child_id");
-            
-            try {
-                $stmt->execute([
-                    ':full_name' => $fullName,
-                    ':birth_weight' => $birthWeight,
-                    ':gender' => $gender,
-                    ':place_of_birth' => $placeOfBirth,
-                    ':child_id' => $childId
-                ]);
-                header("Location: child_profile.php?id=$childId&success=4");
-                exit();
-            } catch (PDOException $e) {
-                $error = "Failed to update personal details.";
-            }
-        }
-    }
-
-    if (isset($_POST['update_guardian'])) {
-        $guardianName = trim($_POST['guardian_name']);
-        $phone = trim($_POST['phone']);
-        $email = trim($_POST['email']);
-        $address = trim($_POST['address']);
-
-        if (empty($guardianName) || empty($phone)) {
-            $error = "Required fields must be filled out.";
-        } else {
-            $stmt = $conn->prepare("UPDATE children SET 
-                guardian_name = :guardian_name,
-                phone = :phone,
-                email = :email,
-                address = :address
-                WHERE child_id = :child_id");
-            
-            try {
-                $stmt->execute([
-                    ':guardian_name' => $guardianName,
-                    ':phone' => $phone,
-                    ':email' => $email,
-                    ':address' => $address,
-                    ':child_id' => $childId
-                ]);
-                header("Location: child_profile.php?id=$childId&success=5");
-                exit();
-            } catch (PDOException $e) {
-                $error = "Failed to update guardian details.";
-            }
-        }
-    }
-
-    if (isset($_POST['update_medical'])) {
-        $birthComplications = trim($_POST['birth_complications']);
-        $allergies = trim($_POST['allergies']);
-        $previousVaccinations = trim($_POST['previous_vaccinations']);
-
+// Handle child information updates
+if (isset($_POST['update_child'])) {
+    $fullName = trim($_POST['full_name']);
+    $birthWeight = floatval($_POST['birth_weight']);
+    $gender = trim($_POST['gender']);
+    $placeOfBirth = trim($_POST['place_of_birth']);
+    $guardianName = trim($_POST['guardian_name']);
+    $phone = trim($_POST['phone']);
+    $email = trim($_POST['email']);
+    $address = trim($_POST['address']);
+    $birthComplications = trim($_POST['birth_complications']);
+    $allergies = trim($_POST['allergies']);
+    $previousVaccinations = trim($_POST['previous_vaccinations']);
+    
+    try {
         $stmt = $conn->prepare("UPDATE children SET 
+            full_name = :full_name,
+            birth_weight = :birth_weight,
+            gender = :gender,
+            place_of_birth = :place_of_birth,
+            guardian_name = :guardian_name,
+            phone = :phone,
+            email = :email,
+            address = :address,
             birth_complications = :birth_complications,
             allergies = :allergies,
             previous_vaccinations = :previous_vaccinations
             WHERE child_id = :child_id");
+            
+        $stmt->execute([
+            ':full_name' => $fullName,
+            ':birth_weight' => $birthWeight,
+            ':gender' => $gender,
+            ':place_of_birth' => $placeOfBirth,
+            ':guardian_name' => $guardianName,
+            ':phone' => $phone,
+            ':email' => $email,
+            ':address' => $address,
+            ':birth_complications' => $birthComplications,
+            ':allergies' => $allergies,
+            ':previous_vaccinations' => $previousVaccinations,
+            ':child_id' => $childId
+        ]);
         
-        try {
-            $stmt->execute([
-                ':birth_complications' => $birthComplications,
-                ':allergies' => $allergies,
-                ':previous_vaccinations' => $previousVaccinations,
-                ':child_id' => $childId
-            ]);
-            header("Location: child_profile.php?id=$childId&success=6");
-            exit();
-        } catch (PDOException $e) {
-            $error = "Failed to update medical history.";
-        }
-    }
-
-    // When recording a vaccination, add validation to check the scheduled date
-    if (isset($_POST['record_vaccination'])) {
-        $vaccineId = $_POST['vaccine_id'];
-        $childId = $_POST['child_id'];
-        $vaccineName = $_POST['vaccine_name'];
-        $doseNumber = $_POST['dose_number'];
-        $administeredDate = $_POST['administered_date'];
-        $notes = $_POST['notes'];
-
-        try {
-            // Get the scheduled date for this vaccine dose
-            $scheduledDateStmt = $conn->prepare("
-                SELECT scheduled_date 
-                FROM vaccinations 
-                WHERE child_id = :child_id 
-                AND vaccine_name = :vaccine_name 
-                AND dose_number = :dose_number
-                AND status = 'Scheduled'
-            ");
-
-            $scheduledDateStmt->execute([
-                ':child_id' => $childId,
-                ':vaccine_name' => $vaccineName,
-                ':dose_number' => $doseNumber
-            ]);
-
-            $scheduledDate = $scheduledDateStmt->fetch(PDO::FETCH_COLUMN);
-
-            // Compare administered date with scheduled date
-            $scheduledDateTime = new DateTime($scheduledDate);
-            $administeredDateTime = new DateTime($administeredDate);
-            $today = new DateTime();
-
-            if ($administeredDateTime > $today) {
-                throw new Exception("Administration date cannot be in the future.");
-            } 
-            
-            if ($scheduledDate && $administeredDateTime < $scheduledDateTime) {
-                throw new Exception("This vaccine dose cannot be administered before its scheduled date (" . $scheduledDate . ").");
-            }
-
-            // Start transaction
-            $conn->beginTransaction();
-
-            // Update the vaccination record
-            $stmt = $conn->prepare("
-                UPDATE vaccinations 
-                SET administered_date = :administered_date,
-                    administered_by = :administered_by,
-                    status = 'Administered',
-                    notes = :notes
-                WHERE child_id = :child_id 
-                AND vaccine_name = :vaccine_name 
-                AND dose_number = :dose_number
-            ");
-
-            $stmt->execute([
-                ':administered_date' => $administeredDate,
-                ':administered_by' => $_SESSION['user']['name'],
-                ':notes' => $notes,
-                ':child_id' => $childId,
-                ':vaccine_name' => $vaccineName,
-                ':dose_number' => $doseNumber
-            ]);
-
-            // Update the appointment_vaccines table
-            $appointmentStmt = $conn->prepare("
-                UPDATE appointment_vaccines 
-                SET status = 'administered' 
-                WHERE vaccine_name = :vaccine_name 
-                AND dose_number = :dose_number 
-                AND appointment_id IN (
-                    SELECT id FROM appointments WHERE child_id = :child_id
-                )
-            ");
-
-            $appointmentStmt->execute([
-                ':vaccine_name' => $vaccineName,
-                ':dose_number' => $doseNumber,
-                ':child_id' => $childId
-            ]);
-
-            $conn->commit();
-            $success = "Vaccination recorded successfully!";
-            
-            header("Location: child_profile.php?id=$childId&success=1");
-            exit();
-
-        } catch (Exception $e) {
-            if ($conn->inTransaction()) {
-                $conn->rollBack();
-            }
-            $error = $e->getMessage();
-        }
+        $successMessage = "Child information updated successfully.";
+        
+        // Refresh child data
+        $stmt = $conn->prepare("SELECT * FROM children WHERE child_id = :child_id");
+        $stmt->bindParam(':child_id', $childId);
+        $stmt->execute();
+        $child = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+    } catch (Exception $e) {
+        $errorMessage = "Failed to update child information: " . $e->getMessage();
     }
 }
 
-// After the form processing and before the HTML starts, add this to refresh data:
-if (isset($_GET['success']) && $_GET['success'] == '1') {
-    // Refresh the takenVaccines data 
-    $stmt = $conn->prepare("
-        SELECT v.vaccine_name, v.dose_number 
-        FROM vaccinations v
-        WHERE v.child_id = :child_id AND v.status = 'Administered'
-    ");
-    $stmt->execute([':child_id' => $childId]);
-    $takenVaccinesRaw = $stmt->fetchAll(PDO::FETCH_ASSOC);
+// Set page title
+$pageTitle = "Child Profile: " . $child['full_name'];
 
-    // Recreate the structured array
-    $takenVaccines = [];
-    foreach ($takenVaccinesRaw as $vaccine) {
-        $name = $vaccine['vaccine_name'];
-        $dose = $vaccine['dose_number'];
-        
-        if (!isset($takenVaccines[$name])) {
-            $takenVaccines[$name] = [];
-        }
-        
-        $takenVaccines[$name][] = $dose;
-    }
-    
-    // Recalculate progress
-    $uniqueTakenVaccineNames = count(array_keys($takenVaccines));
-    
-    if ($totalVaccineTypes > 0) {
-        $progress = ($uniqueTakenVaccineNames / $totalVaccineTypes) * 100;
-    }
+// Check for success message from URL
+if (isset($_GET['success']) && $_GET['success'] == 1) {
+    $vaccineName = isset($_GET['vaccine']) ? $_GET['vaccine'] : 'Vaccine';
+    $doseNumber = isset($_GET['dose']) ? $_GET['dose'] : '';
+    $successMessage = "$vaccineName" . ($doseNumber ? " (Dose $doseNumber)" : "") . " recorded successfully.";
 }
 
-// Enhance success message display
-if (isset($_GET['success'])) {
-    $messages = [
-        1 => isset($_GET['vaccine']) && isset($_GET['dose']) ? 
-             "Successfully recorded " . htmlspecialchars($_GET['vaccine']) . " (Dose " . htmlspecialchars($_GET['dose']) . ")!" :
-             "Vaccine recorded successfully!",
-        2 => "Vaccine scheduled successfully!",
-        3 => "Child details updated successfully!",
-        4 => "Personal information updated successfully!",
-        5 => "Guardian information updated successfully!",
-        6 => "Medical history updated successfully!"
-    ];
-    $message = $messages[$_GET['success']] ?? '';
+if (isset($_GET['schedule_success']) && $_GET['schedule_success'] == 1) {
+    $vaccineName = isset($_GET['vaccine']) ? $_GET['vaccine'] : 'Vaccine';
+    $doseNumber = isset($_GET['dose']) ? $_GET['dose'] : '';
+    $successMessage = "$vaccineName" . ($doseNumber ? " (Dose $doseNumber)" : "") . " scheduled successfully.";
 }
 ?>
 
@@ -880,908 +729,669 @@ if (isset($_GET['success'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars($child['full_name']); ?> - Child Profile</title>
+    <title><?php echo $pageTitle; ?> - Immunization System</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
-    <style>
-        /* Custom scrollbar styles */
-        .scrollbar-thin::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-        
-        .scrollbar-thin::-webkit-scrollbar-track {
-            background: #1f2937;
-            border-radius: 3px;
-        }
-        
-        .scrollbar-thin::-webkit-scrollbar-thumb {
-            background: #4b5563;
-            border-radius: 3px;
-        }
-        
-        .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-            background: #6b7280;
-        }
-        
-        /* Style for dropdown options */
-        select option {
-            padding: 8px;
-            background-color: #1f2937; /* dark gray background */
-            color: white;
-        }
-        
-        select option:hover {
-            background-color: #374151;
-        }
-        
-        select option:disabled {
-            color: #6b7280;
-            font-style: italic;
-        }
-        
-        /* Remove default select arrow in modern browsers */
-        select {
-            -webkit-appearance: none;
-            -moz-appearance: none;
-            appearance: none;
-        }
-        
-        /* Remove default select arrow in IE */
-        select::-ms-expand {
-            display: none;
-        }
-    </style>
 </head>
 <body class="bg-gray-900">
     <?php include 'includes/header.php'; ?>
     <?php include 'includes/sidebar.php'; ?>
     <?php include 'includes/navbar.php'; ?>
 
-    <!-- Main Content -->
-    <div class="ml-64 mt-16 p-6">
-        <!-- Profile Header -->
-        <div class="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg shadow-lg mb-6">
-            <div class="p-6">
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center space-x-6">
-                        <!-- Gender-specific Avatar -->
-                        <div class="relative">
-                            <div class="h-20 w-20 rounded-full bg-gradient-to-br 
-                                <?php echo $child['gender'] === 'Male' 
-                                    ? 'from-blue-400/20 to-blue-600/20 border-blue-500/50' 
-                                    : 'from-pink-400/20 to-pink-600/20 border-pink-500/50'; ?> 
-                                border-2 flex items-center justify-center">
-                                <svg class="w-12 h-12 
-                                    <?php echo $child['gender'] === 'Male' ? 'text-blue-400' : 'text-pink-400'; ?>" 
-                                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
-                                </svg>
-                            </div>
-                        </div>
-                        <!-- Child Info -->
-                        <div>
-                            <h1 class="text-3xl font-bold text-white mb-1">
-                                <?php echo htmlspecialchars($child['full_name']); ?>
-                            </h1>
-                            <div class="flex items-center space-x-4 text-sm">
-                                <span class="text-blue-200">ID: <?php echo htmlspecialchars($child['child_id']); ?></span>
-                                <span class="px-2 py-1 rounded-full text-xs font-medium 
-                                    <?php echo $child['gender'] === 'Male' 
-                                        ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' 
-                                        : 'bg-pink-500/10 text-pink-400 border border-pink-500/20'; ?>">
-                                    <?php echo $child['gender']; ?>
-                                </span>
-                            </div>
-                        </div>
+    <div class="p-4 sm:ml-64 pt-20">
+        <div class="p-4 rounded-lg">
+            <!-- Page Header -->
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
+                <div class="flex items-center">
+                    <div class="bg-blue-600 p-3 rounded-lg mr-4">
+                        <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                  d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-2xl font-semibold text-white"><?php echo htmlspecialchars($child['full_name']); ?></h2>
+                        <p class="text-gray-400">ID: <?php echo htmlspecialchars($child['child_id']); ?></p>
                     </div>
                 </div>
-            </div>
-            <!-- Quick Stats -->
-            <div class="grid grid-cols-4 divide-x divide-blue-500/20 border-t border-blue-500/20">
-                <div class="px-6 py-4">
-                    <p class="text-blue-200 text-sm">Age</p>
-                    <p class="text-white font-semibold"><?php echo htmlspecialchars($ageString); ?></p>
-                </div>
-                <div class="px-6 py-4">
-                    <p class="text-blue-200 text-sm">Birth Weight</p>
-                    <p class="text-white font-semibold"><?php echo htmlspecialchars($child['birth_weight']); ?> kg</p>
-                </div>
-                <div class="px-6 py-4">
-                    <p class="text-blue-200 text-sm">Guardian</p>
-                    <p class="text-white font-semibold"><?php echo htmlspecialchars($child['guardian_name']); ?></p>
-                </div>
-                <div class="px-6 py-4">
-                    <p class="text-blue-200 text-sm">Contact</p>
-                    <a href="tel:<?php echo htmlspecialchars($child['phone']); ?>" 
-                       class="text-white font-semibold hover:text-blue-300 transition duration-300">
-                        <?php echo htmlspecialchars($child['phone']); ?>
+                <div class="mt-4 md:mt-0 flex space-x-2">
+                    <a href="edit_child.php?id=<?php echo urlencode($child['child_id']); ?>" 
+                       class="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-medium rounded-lg 
+                              shadow-lg transition duration-300 flex items-center">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                  d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
+                        </svg>
+                        Edit Profile
+                    </a>
+                    <a href="children.php" 
+                       class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-lg 
+                              shadow-lg transition duration-300 flex items-center">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                  d="M15 19l-7-7 7-7"></path>
+                        </svg>
+                        Back to List
                     </a>
                 </div>
             </div>
-        </div>
 
-        <!-- Detailed Information -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-            <!-- Personal Information -->
-            <div class="bg-gray-800 rounded-lg p-6">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-semibold text-white">Personal Information</h2>
-                    <button type="button" onclick="togglePersonalEdit()"
-                            class="text-blue-400 hover:text-blue-300 transition-colors flex items-center">
-                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <!-- Success/Error Messages -->
+            <?php if (isset($successMessage)): ?>
+                <div class="bg-green-900 text-green-100 p-4 rounded-lg mb-6 animate__animated animate__fadeIn">
+                    <div class="flex items-center">
+                        <svg class="w-6 h-6 mr-2 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                         </svg>
-                        Edit
-                    </button>
-                </div>
-
-                <!-- View Mode -->
-                <div id="personal-view" class="space-y-3">
-                    <div>
-                        <p class="text-gray-400 text-sm">Full Name</p>
-                        <p class="text-white"><?php echo htmlspecialchars($child['full_name']); ?></p>
-                    </div>
-                    <div>
-                        <p class="text-gray-400 text-sm">Date of Birth</p>
-                        <p class="text-white"><?php echo date('F j, Y', strtotime($child['date_of_birth'])); ?></p>
-                    </div>
-                    <div>
-                        <p class="text-gray-400 text-sm">Birth Weight</p>
-                        <p class="text-white"><?php echo htmlspecialchars($child['birth_weight']); ?> kg</p>
-                    </div>
-                    <div>
-                        <p class="text-gray-400 text-sm">Place of Birth</p>
-                        <p class="text-white"><?php echo htmlspecialchars($child['place_of_birth']); ?></p>
-                    </div>
-                    <div>
-                        <p class="text-gray-400 text-sm">Gender</p>
-                        <p class="text-white"><?php echo htmlspecialchars($child['gender']); ?></p>
+                        <span><?php echo $successMessage; ?></span>
                     </div>
                 </div>
+            <?php endif; ?>
 
-                <!-- Edit Mode -->
-                <form id="personal-edit" method="POST" class="hidden space-y-4">
-                    <div>
-                        <label class="block text-gray-400 text-sm mb-1">Full Name *</label>
-                        <input type="text" name="full_name" required
-                               value="<?php echo htmlspecialchars($child['full_name']); ?>"
-                               class="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg">
-                    </div>
-                    <div>
-                        <label class="block text-gray-400 text-sm mb-1">Birth Weight (kg) *</label>
-                        <input type="number" step="0.01" name="birth_weight" required
-                               value="<?php echo htmlspecialchars($child['birth_weight']); ?>"
-                               class="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg">
-                    </div>
-                    <div>
-                        <label class="block text-gray-400 text-sm mb-1">Place of Birth</label>
-                        <input type="text" name="place_of_birth"
-                               value="<?php echo htmlspecialchars($child['place_of_birth']); ?>"
-                               class="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg">
-                    </div>
-                    <div>
-                        <label class="block text-gray-400 text-sm mb-1">Gender *</label>
-                        <select name="gender" required
-                                class="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg">
-                            <option value="Male" <?php echo $child['gender'] === 'Male' ? 'selected' : ''; ?>>Male</option>
-                            <option value="Female" <?php echo $child['gender'] === 'Female' ? 'selected' : ''; ?>>Female</option>
-                        </select>
-                    </div>
-                    <div class="flex justify-end space-x-3 pt-3">
-                        <button type="button" onclick="togglePersonalEdit()"
-                                class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
-                            Cancel
-                        </button>
-                        <button type="submit" name="update_personal"
-                                class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
-                            Save Changes
-                        </button>
-                    </div>
-                </form>
-            </div>
-
-            <!-- Guardian Information -->
-            <div class="bg-gray-800 rounded-lg p-6">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-semibold text-white">Guardian Information</h2>
-                    <button type="button" onclick="toggleGuardianEdit()"
-                            class="text-blue-400 hover:text-blue-300 transition-colors flex items-center">
-                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <?php if (isset($errorMessage)): ?>
+                <div class="bg-red-900 text-red-100 p-4 rounded-lg mb-6 animate__animated animate__fadeIn">
+                    <div class="flex items-center">
+                        <svg class="w-6 h-6 mr-2 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                         </svg>
-                        Edit
-                    </button>
-                </div>
-
-                <!-- View Mode -->
-                <div id="guardian-view" class="space-y-3">
-                    <div>
-                        <p class="text-gray-400 text-sm">Guardian Name</p>
-                        <p class="text-white"><?php echo htmlspecialchars($child['guardian_name']); ?></p>
-                    </div>
-                    <div>
-                        <p class="text-gray-400 text-sm">Phone Number</p>
-                        <p class="text-white"><?php echo htmlspecialchars($child['phone']); ?></p>
-                    </div>
-                    <div>
-                        <p class="text-gray-400 text-sm">Email Address</p>
-                        <p class="text-white"><?php echo htmlspecialchars($child['email'] ?: 'Not provided'); ?></p>
-                    </div>
-                    <div>
-                        <p class="text-gray-400 text-sm">Address</p>
-                        <p class="text-white"><?php echo htmlspecialchars($child['address']); ?></p>
+                        <span><?php echo $errorMessage; ?></span>
                     </div>
                 </div>
+            <?php endif; ?>
 
-                <!-- Edit Mode -->
-                <form id="guardian-edit" method="POST" class="hidden space-y-4">
-                    <div>
-                        <label class="block text-gray-400 text-sm mb-1">Guardian's Name *</label>
-                        <input type="text" name="guardian_name" required
-                               value="<?php echo htmlspecialchars($child['guardian_name']); ?>"
-                               class="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg">
+            <!-- Child Information Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <!-- Personal Information -->
+                <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
+                    <div class="p-4 border-b border-gray-700">
+                        <h3 class="text-lg font-semibold text-white">Personal Information</h3>
                     </div>
-                    <div>
-                        <label class="block text-gray-400 text-sm mb-1">Phone Number *</label>
-                        <input type="tel" name="phone" required
-                               value="<?php echo htmlspecialchars($child['phone']); ?>"
-                               class="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg">
-                    </div>
-                    <div>
-                        <label class="block text-gray-400 text-sm mb-1">Email Address</label>
-                        <input type="email" name="email"
-                               value="<?php echo htmlspecialchars($child['email']); ?>"
-                               class="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg">
-                    </div>
-                    <div>
-                        <label class="block text-gray-400 text-sm mb-1">Address</label>
-                        <textarea name="address" rows="2"
-                                  class="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg"><?php echo htmlspecialchars($child['address']); ?></textarea>
-                    </div>
-                    <div class="flex justify-end space-x-3 pt-3">
-                        <button type="button" onclick="toggleGuardianEdit()"
-                                class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
-                            Cancel
-                        </button>
-                        <button type="submit" name="update_guardian"
-                                class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
-                            Save Changes
-                        </button>
-                    </div>
-                </form>
-            </div>
-
-            <!-- Medical History -->
-            <div class="bg-gray-800 rounded-lg p-6 md:col-span-2">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-xl font-semibold text-white">Medical History</h2>
-                    <button type="button" onclick="toggleMedicalEdit()"
-                            class="text-blue-400 hover:text-blue-300 transition-colors flex items-center">
-                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
-                        </svg>
-                        Edit
-                    </button>
-                </div>
-
-                <!-- View Mode -->
-                <div id="medical-view" class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div>
-                        <p class="text-gray-400 text-sm mb-2">Birth Complications</p>
-                        <p class="text-white"><?php echo htmlspecialchars($child['birth_complications'] ?: 'None reported'); ?></p>
-                    </div>
-                    <div>
-                        <p class="text-gray-400 text-sm mb-2">Allergies</p>
-                        <p class="text-white"><?php echo htmlspecialchars($child['allergies'] ?: 'None reported'); ?></p>
-                    </div>
-                    <div>
-                        <p class="text-gray-400 text-sm mb-2">Previous Vaccinations</p>
-                        <p class="text-white"><?php echo htmlspecialchars($child['previous_vaccinations'] ?: 'None reported'); ?></p>
-                    </div>
-                </div>
-
-                <!-- Edit Mode -->
-                <form id="medical-edit" method="POST" class="hidden space-y-4">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div>
-                            <label class="block text-gray-400 text-sm mb-2">Birth Complications</label>
-                            <textarea name="birth_complications" rows="3"
-                                      class="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg"><?php echo htmlspecialchars($child['birth_complications']); ?></textarea>
-                        </div>
-                        <div>
-                            <label class="block text-gray-400 text-sm mb-2">Allergies</label>
-                            <textarea name="allergies" rows="3"
-                                      class="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg"><?php echo htmlspecialchars($child['allergies']); ?></textarea>
-                        </div>
-                        <div>
-                            <label class="block text-gray-400 text-sm mb-2">Previous Vaccinations</label>
-                            <textarea name="previous_vaccinations" rows="3"
-                                      class="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-white rounded-lg"><?php echo htmlspecialchars($child['previous_vaccinations']); ?></textarea>
-                        </div>
-                    </div>
-                    <div class="flex justify-end space-x-3 pt-3">
-                        <button type="button" onclick="toggleMedicalEdit()"
-                                class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
-                            Cancel
-                        </button>
-                        <button type="submit" name="update_medical"
-                                class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
-                            Save Changes
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <!-- Vaccination Management Section -->
-        <div class="mt-6">
-            <!-- Top Row - Progress & Actions -->
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-                <!-- Progress Card -->
-                <div class="bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700/50 rounded-xl p-6 transform transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/5">
-                    <h2 class="text-xl font-bold text-white flex items-center mb-6">
-                        <svg class="w-6 h-6 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-                        </svg>
-                        Vaccination Progress
-                    </h2>
-                    
-                    <!-- Modern Circular Progress Indicator -->
-                    <div class="flex justify-center mb-6">
-                        <div class="relative w-40 h-40">
-                            <!-- Background Circle -->
-                            <svg class="w-full h-full" viewBox="0 0 100 100">
-                                <circle 
-                                    cx="50" cy="50" r="40" 
-                                    stroke="#1E293B" 
-                                    stroke-width="8" 
-                                    fill="none" 
-                                />
-                                
-                                <!-- Progress Circle with Gradient -->
-                                <circle 
-                                    cx="50" cy="50" r="40" 
-                                    stroke="url(#blue-gradient)" 
-                                    stroke-width="8" 
-                                    fill="none" 
-                                    stroke-linecap="round"
-                                    stroke-dasharray="<?php echo 2 * M_PI * 40; ?>" 
-                                    stroke-dashoffset="<?php echo 2 * M_PI * 40 * (1 - $progress / 100); ?>" 
-                                    transform="rotate(-90 50 50)"
-                                />
-                                
-                                <!-- Define the gradient -->
-                                <defs>
-                                    <linearGradient id="blue-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                                        <stop offset="0%" stop-color="#3B82F6" />
-                                        <stop offset="100%" stop-color="#60A5FA" />
-                                    </linearGradient>
-                                </defs>
-                            </svg>
-                            
-                            <!-- Center Text -->
-                            <div class="absolute inset-0 flex flex-col items-center justify-center">
-                                <span class="text-3xl font-bold text-white"><?php echo round($progress); ?>%</span>
-                                <span class="text-xs text-gray-400">Complete</span>
+                    <div class="p-6">
+                        <div class="space-y-4">
+                            <div>
+                                <p class="text-sm text-gray-400">Full Name</p>
+                                <p class="text-white"><?php echo htmlspecialchars($child['full_name']); ?></p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-400">Date of Birth</p>
+                                <p class="text-white"><?php echo htmlspecialchars($child['date_of_birth']); ?> (<?php echo $ageString; ?>)</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-400">Gender</p>
+                                <p class="text-white"><?php echo htmlspecialchars($child['gender']); ?></p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-400">Birth Weight</p>
+                                <p class="text-white"><?php echo htmlspecialchars($child['birth_weight']); ?> kg</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-400">Place of Birth</p>
+                                <p class="text-white"><?php echo htmlspecialchars($child['place_of_birth']); ?></p>
                             </div>
                         </div>
                     </div>
-                    
-                    <div class="text-center">
-                        <p class="text-gray-400 text-sm">
-                            <span class="text-blue-400 font-semibold"><?php echo $uniqueTakenVaccineNames; ?></span> of 
-                            <span class="text-blue-400 font-semibold"><?php echo $totalVaccineTypes; ?></span> vaccines completed
-                        </p>
+                </div>
+
+                <!-- Guardian Information -->
+                <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
+                    <div class="p-4 border-b border-gray-700">
+                        <h3 class="text-lg font-semibold text-white">Guardian Information</h3>
+                    </div>
+                    <div class="p-6">
+                        <div class="space-y-4">
+                            <div>
+                                <p class="text-sm text-gray-400">Guardian Name</p>
+                                <p class="text-white"><?php echo htmlspecialchars($child['guardian_name']); ?></p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-400">Phone Number</p>
+                                <p class="text-white"><?php echo htmlspecialchars($child['phone']); ?></p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-400">Email Address</p>
+                                <p class="text-white"><?php echo htmlspecialchars($child['email'] ?: 'Not provided'); ?></p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-400">Home Address</p>
+                                <p class="text-white"><?php echo htmlspecialchars($child['address'] ?: 'Not provided'); ?></p>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Record and Schedule Cards -->
-                <div class="lg:col-span-2">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <!-- Record Vaccine Card -->
-                        <div class="bg-gradient-to-br from-gray-800 to-gray-900 border border-green-500/20 rounded-xl p-6 transform transition-all duration-300 hover:shadow-xl hover:shadow-green-500/5">
-                            <h2 class="text-xl font-bold text-white flex items-center mb-6">
-                                <svg class="w-6 h-6 mr-2 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                        d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                </svg>
-                                Record Vaccine
-                            </h2>
-                            
-                            <form method="POST" class="space-y-4">
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-400 mb-2">Select Vaccine</label>
-                                    <div class="relative">
-                                        <select id="vaccine_select" name="vaccine_name" required 
-                                                class="block w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
-                                                       shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500/50
-                                                       transition-colors appearance-none">
-                                            <option value="" class="bg-gray-800">Select a vaccine...</option>
-                                            <?php foreach ($availableVaccines as $vaccine): 
-                                                $takenDoses = isset($takenVaccines[$vaccine['vaccine_name']]) ? 
-                                                             count($takenVaccines[$vaccine['vaccine_name']]) : 0;
-                                                $isFullyAdministered = $takenDoses >= $vaccine['max_doses'];
-                                            ?>
-                                                <option value="<?php echo htmlspecialchars($vaccine['vaccine_name']); ?>"
-                                                        data-max-doses="<?php echo htmlspecialchars($vaccine['max_doses']); ?>"
-                                                        data-description="<?php echo htmlspecialchars($vaccine['description']); ?>"
-                                                        data-target-disease="<?php echo htmlspecialchars($vaccine['target_disease']); ?>"
-                                                        data-taken-doses="<?php echo $takenDoses; ?>"
-                                                        <?php echo $isFullyAdministered ? 'disabled' : ''; ?>
-                                                        class="bg-gray-800">
-                                                    <?php 
-                                                        echo htmlspecialchars($vaccine['vaccine_name']);
-                                                        if ($takenDoses > 0) {
-                                                            echo " (" . $takenDoses . "/" . $vaccine['max_doses'] . " doses)";
-                                                        }
-                                                        if ($isFullyAdministered) {
-                                                            echo " - Completed";
-                                                        }
-                                                    ?>
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-                                            <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                                <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
-                                            </svg>
-                                        </div>
-                                    </div>
-                                    <!-- Vaccine Information Display -->
-                                    <div id="vaccine_info" class="mt-2 text-sm text-gray-400 hidden">
-                                        <p id="vaccine_description" class="mb-1"></p>
-                                        <p id="vaccine_target" class="text-blue-400"></p>
-                                    </div>
-                                </div>
-                                
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-400 mb-2">Dose Number</label>
-                                    <div class="flex items-center space-x-2">
-                                        <input type="number" name="dose_number" id="dose_number" min="1" required
-                                               class="block w-24 bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
-                                                      shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500/50
-                                                      transition-colors">
-                                        <span id="dose_max_indicator" class="text-gray-400"></span>
-                                    </div>
-                                    <p id="dose_help_text" class="mt-1 text-sm text-gray-500 italic"></p>
-                                    <div id="taken_doses_info" class="mt-1 text-sm text-yellow-500 italic"></div>
-                                </div>
-                                
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-400 mb-2">Notes (Optional)</label>
-                                    <textarea name="notes" rows="2" 
-                                              class="block w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
-                                                     shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500/50
-                                                     transition-colors"></textarea>
-                                </div>
-                                
-                                <div>
-                                    <button type="submit" name="record_vaccine" 
-                                            class="w-full flex items-center justify-center space-x-2 px-4 py-3 
-                                                   bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700
-                                                   text-white font-medium rounded-lg transition-all duration-200 
-                                                   focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                        </svg>
-                                        <span>Record Vaccination</span>
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-
-                        <!-- Schedule Vaccine Card -->
-                        <div class="bg-gradient-to-br from-gray-800 to-gray-900 border border-blue-500/20 rounded-xl p-6 transform transition-all duration-300 hover:shadow-xl hover:shadow-blue-500/5">
-                            <h2 class="text-xl font-bold text-white flex items-center mb-6">
-                                <svg class="w-6 h-6 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
-                                </svg>
-                                Schedule Vaccine
-                            </h2>
-                            
-                            <form method="POST" class="space-y-4">
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-400 mb-2">Vaccine</label>
-                                    <div class="relative">
-                                        <select id="schedule_vaccine_select" name="vaccine_name" required 
-                                                class="block w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
-                                                       shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50
-                                                       transition-colors appearance-none">
-                                            <option value="" class="bg-gray-800">Select a vaccine...</option>
-                                            <?php foreach ($availableVaccines as $vaccine): 
-                                                $isFullyAdministered = isset($takenVaccines[$vaccine['vaccine_name']]) && 
-                                                             count($takenVaccines[$vaccine['vaccine_name']]) >= $vaccine['max_doses'];
-                                            ?>
-                                                <option value="<?php echo htmlspecialchars($vaccine['vaccine_name']); ?>"
-                                                        data-max-doses="<?php echo htmlspecialchars($vaccine['max_doses']); ?>"
-                                                        <?php echo $isFullyAdministered ? 'disabled' : ''; ?>
-                                                        class="bg-gray-800">
-                                                    <?php echo htmlspecialchars($vaccine['vaccine_name']); ?>
-                                                    <?php if ($isFullyAdministered): ?> (All doses administered)<?php endif; ?>
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                        <!-- Add a custom dropdown arrow -->
-                                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-                                            <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                                <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
-                                            </svg>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-400 mb-2">Dose Number</label>
-                                    <div class="flex items-center space-x-2">
-                                        <input type="number" name="dose_number" id="schedule_dose_number" min="1" max="10" value="1" required
-                                               class="block w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
-                                                      shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50
-                                                      transition-colors">
-                                        <div id="schedule_dose_max_indicator" class="hidden text-gray-400 whitespace-nowrap"></div>
-                                    </div>
-                                    <div id="schedule_taken_doses_info" class="mt-1 text-sm text-yellow-500 italic hidden"></div>
-                                </div>
-                                
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-400 mb-2">Date</label>
-                                    <input type="date" name="scheduled_date" required min="<?php echo date('Y-m-d'); ?>"
-                                           class="block w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
-                                                  shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50
-                                                  transition-colors">
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-400 mb-2">Time</label>
-                                    <input type="time" name="scheduled_time" required
-                                           class="block w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
-                                                  shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50
-                                                  transition-colors">
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-400 mb-2">Notes (Optional)</label>
-                                    <textarea name="notes" rows="2" 
-                                              class="block w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white 
-                                                     shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50
-                                                     transition-colors"></textarea>
-                                </div>
-                                
-                                <div>
-                                    <button type="submit" name="schedule_vaccine" 
-                                            class="w-full flex items-center justify-center space-x-2 px-4 py-3 
-                                                   bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700
-                                                   text-white font-medium rounded-lg transition-all duration-200 
-                                                   focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                                d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                                        </svg>
-                                        <span>Schedule Appointment</span>
-                                    </button>
-                                </div>
-                            </form>
+                <!-- Medical Information -->
+                <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
+                    <div class="p-4 border-b border-gray-700">
+                        <h3 class="text-lg font-semibold text-white">Medical Information</h3>
+                    </div>
+                    <div class="p-6">
+                        <div class="space-y-4">
+                            <div>
+                                <p class="text-sm text-gray-400">Birth Complications</p>
+                                <p class="text-white"><?php echo htmlspecialchars($child['birth_complications'] ?: 'None reported'); ?></p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-400">Known Allergies</p>
+                                <p class="text-white"><?php echo htmlspecialchars($child['allergies'] ?: 'None reported'); ?></p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-400">Previous Vaccinations</p>
+                                <p class="text-white"><?php echo htmlspecialchars($child['previous_vaccinations'] ?: 'None reported'); ?></p>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-           <!-- Vaccination History -->
-<div class="bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 rounded-xl p-6 transform transition-all duration-300 hover:shadow-xl hover:shadow-gray-700/5">
-    <h2 class="text-xl font-bold text-white flex items-center mb-6">
-        <svg class="w-5 h-5 mr-2 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2H9z"/>
-        </svg>
-        Vaccination History
-    </h2>
-    
-    <div class="overflow-x-auto max-h-[500px] scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
-        <table class="w-full">
-            <thead class="bg-gray-700/50 sticky top-0">
-                <tr>
-                    <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">Vaccine</th>
-                    <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">Dose</th>
-                    <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">Status</th>
-                    <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">Scheduled Date</th>
-                    <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">Scheduled Time</th>
-                    <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">Administered Date</th>
-                    <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">Administered By</th>
-                    <th class="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider text-gray-300">Notes</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-700/30">
-                <?php if (count($vaccinations) === 0): ?>
-                    <tr>
-                        <td colspan="8" class="py-4 px-6 text-center text-gray-400">
-                            No vaccination records found.
-                        </td>
-                    </tr>
-                <?php endif; ?>
-                
-                <?php foreach ($vaccinations as $vaccination): ?>
-                <tr class="hover:bg-gray-700/20 transition-colors duration-150 
-                    <?php 
-                        echo $vaccination['status'] === 'Administered' ? 'bg-green-900/10' : 
-                            ($vaccination['status'] === 'Scheduled' ? 'bg-blue-900/10' : 
-                            ($vaccination['status'] === 'Missed' ? 'bg-red-900/10' : ''));
-                    ?>">
-                    <td class="py-4 px-6 text-white font-medium">
-                        <?php echo htmlspecialchars($vaccination['vaccine_name']); ?>
-                    </td>
-                    <td class="py-4 px-6 text-gray-300">
-                        <?php echo htmlspecialchars($vaccination['dose_number']); ?>
-                    </td>
-                    <td class="py-4 px-6">
-                        <span class="px-3 py-1 rounded-full text-xs font-medium 
-                            <?php 
-                                echo $vaccination['status'] === 'Administered' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 
-                                    ($vaccination['status'] === 'Scheduled' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 
-                                    ($vaccination['status'] === 'Missed' ? 'bg-red-900/10 text-red-400 border border-red-500/20' : 
-                                    'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'));
-                            ?>">
-                            <?php echo htmlspecialchars(ucfirst($vaccination['status'])); ?>
-                        </span>
-                    </td>
-                    <td class="py-4 px-6 text-gray-300">
-                        <?php echo $vaccination['scheduled_date'] ? date('M d, Y', strtotime($vaccination['scheduled_date'])) : '-'; ?>
-                    </td>
-                    <td class="py-4 px-6 text-gray-300">
-                        <?php echo $vaccination['scheduled_time'] ? date('h:i A', strtotime($vaccination['scheduled_time'])) : '-'; ?>
-                    </td>
-                    <td class="py-4 px-6 text-gray-300">
-                        <?php echo $vaccination['administered_date'] ? date('M d, Y', strtotime($vaccination['administered_date'])) : '-'; ?>
-                    </td>
-                    <td class="py-4 px-6 text-gray-300">
-                        <?php echo htmlspecialchars($vaccination['administered_by_name'] ?: '-'); ?>
-                    </td>
-                    <td class="py-4 px-6 text-gray-300">
-                        <?php echo htmlspecialchars($vaccination['notes'] ?: '-'); ?>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-    </div>
-</div>
-    <!-- Notification -->
-    <?php if (isset($_GET['success'])): ?>
-    <div id="notification" 
-         class="fixed top-24 right-4 z-50 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg 
-                animate__animated animate__fadeInRight flex items-center space-x-2">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-        </svg>
-        <span><?php echo $message; ?></span>
-    </div>
+            <!-- Vaccination Progress -->
+            <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden mb-6">
+                <div class="p-4 border-b border-gray-700">
+                    <h3 class="text-lg font-semibold text-white">Vaccination Progress</h3>
+                </div>
+                <div class="p-6">
+                    <div class="mb-4">
+                        <div class="flex justify-between mb-1">
+                            <span class="text-white"><?php echo $completedVaccines; ?> of <?php echo $totalVaccines; ?> vaccines administered</span>
+                            <span class="text-white"><?php echo $progressPercentage; ?>%</span>
+                        </div>
+                        <div class="w-full bg-gray-700 rounded-full h-2.5">
+                            <div class="bg-blue-600 h-2.5 rounded-full" style="width: <?php echo $progressPercentage; ?>%"></div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                        <div class="bg-blue-900/30 p-4 rounded-lg">
+                            <p class="text-2xl font-bold text-blue-400"><?php echo count($allVaccines); ?></p>
+                            <p class="text-gray-400">Total Vaccines</p>
+                        </div>
+                        <div class="bg-green-900/30 p-4 rounded-lg">
+                            <p class="text-2xl font-bold text-green-400"><?php echo count($administeredVaccines); ?></p>
+                            <p class="text-gray-400">Administered</p>
+                        </div>
+                        <div class="bg-yellow-900/30 p-4 rounded-lg">
+                            <p class="text-2xl font-bold text-yellow-400"><?php echo count($scheduledVaccines); ?></p>
+                            <p class="text-gray-400">Scheduled</p>
+                        </div>
+                        <div class="bg-red-900/30 p-4 rounded-lg">
+                            <p class="text-2xl font-bold text-red-400"><?php echo count($missedVaccines); ?></p>
+                            <p class="text-gray-400">Missed</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-    <script>
-        // Notification functionality
-        const notification = document.getElementById('notification');
-        if (notification) {
-            // Remove the success parameter from the URL
-            const url = new URL(window.location.href);
-            url.searchParams.delete('success');
-            history.replaceState(null, '', url);
+            <!-- Vaccination History -->
+            <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden mb-6">
+                <div class="p-4 border-b border-gray-700 flex justify-between items-center">
+                    <h3 class="text-lg font-semibold text-white">Vaccination History</h3>
+                    <div class="flex space-x-2">
+                        <button id="recordVaccineBtn" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg 
+                                                 shadow-lg transition duration-300 flex items-center">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                      d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                            </svg>
+                            Record Vaccine
+                        </button>
+                        <button id="scheduleVaccineBtn" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg 
+                                                   shadow-lg transition duration-300 flex items-center">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                            Schedule Vaccine
+                        </button>
+                    </div>
+                </div>
 
-            // Hide the notification after 3 seconds
-            setTimeout(() => {
-                notification.classList.replace('animate__fadeInRight', 'animate__fadeOutRight');
-                setTimeout(() => {
-                    notification.remove();
-                }, 1000);
-            }, 3000);
-        }
-    </script>
-    <?php endif; ?>
+                <!-- Record Vaccine Form (Initially Hidden) -->
+                <div id="recordVaccineForm" class="p-6 border-b border-gray-700 hidden">
+                    <h4 class="text-lg font-medium text-white mb-4">Record Administered Vaccine</h4>
+                    <form method="POST" class="space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="vaccine_name" class="block text-gray-300 text-sm font-medium mb-2">Vaccine Name</label>
+                                <select id="vaccine_name" name="vaccine_name" required
+                                        class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                               focus:ring-2 focus:ring-blue-500 transition duration-300">
+                                    <option value="">Select Vaccine</option>
+                                    <?php foreach ($availableVaccines as $vaccine): ?>
+                                        <option value="<?php echo htmlspecialchars($vaccine['name']); ?>">
+                                            <?php echo htmlspecialchars($vaccine['name']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="dose_number" class="block text-gray-300 text-sm font-medium mb-2">Dose Number</label>
+                                <input type="number" id="dose_number" name="dose_number" min="1" value="1" required
+                                       class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                              focus:ring-2 focus:ring-blue-500 transition duration-300">
+                            </div>
+                            <div>
+                                <label for="date_taken" class="block text-gray-300 text-sm font-medium mb-2">Date Administered</label>
+                                <input type="date" id="date_taken" name="date_taken" required
+                                       value="<?php echo date('Y-m-d'); ?>" max="<?php echo date('Y-m-d'); ?>"
+                                       class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                              focus:ring-2 focus:ring-blue-500 transition duration-300">
+                            </div>
+                            <div>
+                                <label for="notes" class="block text-gray-300 text-sm font-medium mb-2">Notes</label>
+                                <textarea id="notes" name="notes" rows="1"
+                                          class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                                 focus:ring-2 focus:ring-blue-500 transition duration-300"></textarea>
+                            </div>
+                        </div>
+                        <div class="flex justify-end space-x-2">
+                            <button type="button" id="cancelRecordBtn" 
+                                    class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-lg 
+                                           shadow-lg transition duration-300">
+                                Cancel
+                            </button>
+                            <button type="submit" name="record_vaccine" 
+                                    class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg 
+                                           shadow-lg transition duration-300 flex items-center">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                          d="M5 13l4 4L19 7"></path>
+                                </svg>
+                                Record Vaccine
+                            </button>
+                        </div>
+                    </form>
+                </div>
 
-    <!-- Error Notification -->
-    <?php if (isset($error)): ?>
-    <div id="errorNotification" 
-         class="fixed top-24 right-4 z-50 bg-red-500 text-white px-6 py-4 rounded-lg shadow-lg 
-                animate__animated animate__fadeInRight flex items-center">
-        <div class="flex-shrink-0 mr-4">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                      d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-            </svg>
+                <!-- Schedule Vaccine Form (Initially Hidden) -->
+                <div id="scheduleVaccineForm" class="p-6 border-b border-gray-700 hidden">
+                    <h4 class="text-lg font-medium text-white mb-4">Schedule Vaccine</h4>
+                    <form method="POST" class="space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="schedule_vaccine_name" class="block text-gray-300 text-sm font-medium mb-2">Vaccine Name</label>
+                                <select id="schedule_vaccine_name" name="vaccine_name" required
+                                        class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                               focus:ring-2 focus:ring-blue-500 transition duration-300">
+                                    <option value="">Select Vaccine</option>
+                                    <?php foreach ($availableVaccines as $vaccine): ?>
+                                        <option value="<?php echo htmlspecialchars($vaccine['name']); ?>">
+                                            <?php echo htmlspecialchars($vaccine['name']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="schedule_dose_number" class="block text-gray-300 text-sm font-medium mb-2">Dose Number</label>
+                                <input type="number" id="schedule_dose_number" name="dose_number" min="1" value="1" required
+                                       class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                              focus:ring-2 focus:ring-blue-500 transition duration-300">
+                            </div>
+                            <div>
+                                <label for="scheduled_date" class="block text-gray-300 text-sm font-medium mb-2">Scheduled Date</label>
+                                <input type="date" id="scheduled_date" name="scheduled_date" required
+                                       value="<?php echo date('Y-m-d', strtotime('+7 days')); ?>" 
+                                       min="<?php echo date('Y-m-d'); ?>"
+                                       class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                              focus:ring-2 focus:ring-blue-500 transition duration-300">
+                            </div>
+                            <div>
+                                <label for="schedule_notes" class="block text-gray-300 text-sm font-medium mb-2">Notes</label>
+                                <textarea id="schedule_notes" name="notes" rows="1"
+                                          class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 text-white rounded-lg 
+                                                 focus:ring-2 focus:ring-blue-500 transition duration-300"></textarea>
+                            </div>
+                        </div>
+                        <div class="flex justify-end space-x-2">
+                            <button type="button" id="cancelScheduleBtn" 
+                                    class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-lg 
+                                           shadow-lg transition duration-300">
+                                Cancel
+                            </button>
+                            <button type="submit" name="schedule_vaccine" 
+                                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg 
+                                           shadow-lg transition duration-300 flex items-center">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                </svg>
+                                Schedule Vaccine
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Vaccination Tabs -->
+                <div class="border-b border-gray-700">
+                    <nav class="flex flex-wrap">
+                        <button class="tab-link px-6 py-3 text-gray-300 hover:text-white border-b-2 border-blue-500 text-white" 
+                                data-tab="all-vaccines">All</button>
+                        <button class="tab-link px-6 py-3 text-gray-300 hover:text-white border-b-2 border-transparent" 
+                                data-tab="administered-vaccines">Administered</button>
+                        <button class="tab-link px-6 py-3 text-gray-300 hover:text-white border-b-2 border-transparent" 
+                                data-tab="scheduled-vaccines">Scheduled</button>
+                        <button class="tab-link px-6 py-3 text-gray-300 hover:text-white border-b-2 border-transparent" 
+                                data-tab="missed-vaccines">Missed</button>
+                    </nav>
+                </div>
+
+                <!-- Tab Content -->
+                <div class="tab-content">
+                    <!-- All Vaccines Tab -->
+                    <div id="all-vaccines" class="tab-pane block">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left text-gray-300">
+                                <thead class="text-xs uppercase bg-gray-700 text-gray-300">
+                                    <tr>
+                                        <th scope="col" class="px-6 py-3">Vaccine</th>
+                                        <th scope="col" class="px-6 py-3">Dose</th>
+                                        <th scope="col" class="px-6 py-3">Scheduled Date</th>
+                                        <th scope="col" class="px-6 py-3">Administered Date</th>
+                                        <th scope="col" class="px-6 py-3">Status</th>
+                                        <th scope="col" class="px-6 py-3">Administered By</th>
+                                        <th scope="col" class="px-6 py-3">Notes</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (empty($allVaccines)): ?>
+                                        <tr class="border-b border-gray-700">
+                                            <td colspan="7" class="px-6 py-4 text-center text-gray-400">No vaccination records found.</td>
+                                        </tr>
+                                    <?php else: ?>
+                                        <?php foreach ($allVaccines as $vaccine): ?>
+                                            <tr class="border-b border-gray-700 hover:bg-gray-700">
+                                                <td class="px-6 py-4 font-medium"><?php echo htmlspecialchars($vaccine['vaccine_name']); ?></td>
+                                                <td class="px-6 py-4"><?php echo htmlspecialchars($vaccine['dose_number']); ?></td>
+                                                <td class="px-6 py-4"><?php echo htmlspecialchars($vaccine['scheduled_date'] ?? 'N/A'); ?></td>
+                                                <td class="px-6 py-4"><?php echo htmlspecialchars($vaccine['administered_date'] ?? 'Not yet administered'); ?></td>
+                                                <td class="px-6 py-4">
+                                                    <?php if ($vaccine['status'] === 'Administered'): ?>
+                                                        <span class="px-2 py-1 text-xs rounded-full bg-green-500/10 text-green-400">Administered</span>
+                                                    <?php elseif ($vaccine['status'] === 'Scheduled'): ?>
+                                                        <span class="px-2 py-1 text-xs rounded-full bg-blue-500/10 text-blue-400">Scheduled</span>
+                                                    <?php elseif ($vaccine['status'] === 'Missed'): ?>
+                                                        <span class="px-2 py-1 text-xs rounded-full bg-red-500/10 text-red-400">Missed</span>
+                                                    <?php else: ?>
+                                                        <span class="px-2 py-1 text-xs rounded-full bg-gray-500/10 text-gray-400"><?php echo htmlspecialchars($vaccine['status']); ?></span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td class="px-6 py-4"><?php echo htmlspecialchars($vaccine['administered_by_name'] ?? 'N/A'); ?></td>
+                                                <td class="px-6 py-4"><?php echo htmlspecialchars($vaccine['notes'] ?? ''); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Administered Vaccines Tab -->
+                    <div id="administered-vaccines" class="tab-pane hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left text-gray-300">
+                                <thead class="text-xs uppercase bg-gray-700 text-gray-300">
+                                    <tr>
+                                        <th scope="col" class="px-6 py-3">Vaccine</th>
+                                        <th scope="col" class="px-6 py-3">Dose</th>
+                                        <th scope="col" class="px-6 py-3">Administered Date</th>
+                                        <th scope="col" class="px-6 py-3">Administered By</th>
+                                        <th scope="col" class="px-6 py-3">Notes</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (empty($administeredVaccines)): ?>
+                                        <tr class="border-b border-gray-700">
+                                            <td colspan="5" class="px-6 py-4 text-center text-gray-400">No administered vaccines found.</td>
+                                        </tr>
+                                    <?php else: ?>
+                                        <?php foreach ($administeredVaccines as $vaccine): ?>
+                                            <tr class="border-b border-gray-700 hover:bg-gray-700">
+                                                <td class="px-6 py-4 font-medium"><?php echo htmlspecialchars($vaccine['vaccine_name']); ?></td>
+                                                <td class="px-6 py-4"><?php echo htmlspecialchars($vaccine['dose_number']); ?></td>
+                                                <td class="px-6 py-4"><?php echo htmlspecialchars($vaccine['administered_date']); ?></td>
+                                                <td class="px-6 py-4"><?php echo htmlspecialchars($vaccine['administered_by_name'] ?? 'N/A'); ?></td>
+                                                <td class="px-6 py-4"><?php echo htmlspecialchars($vaccine['notes'] ?? ''); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Scheduled Vaccines Tab -->
+                    <div id="scheduled-vaccines" class="tab-pane hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left text-gray-300">
+                                <thead class="text-xs uppercase bg-gray-700 text-gray-300">
+                                    <tr>
+                                        <th scope="col" class="px-6 py-3">Vaccine</th>
+                                        <th scope="col" class="px-6 py-3">Dose</th>
+                                        <th scope="col" class="px-6 py-3">Scheduled Date</th>
+                                        <th scope="col" class="px-6 py-3">Notes</th>
+                                        <th scope="col" class="px-6 py-3">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (empty($scheduledVaccines)): ?>
+                                        <tr class="border-b border-gray-700">
+                                            <td colspan="5" class="px-6 py-4 text-center text-gray-400">No scheduled vaccines found.</td>
+                                        </tr>
+                                    <?php else: ?>
+                                        <?php foreach ($scheduledVaccines as $vaccine): ?>
+                                            <tr class="border-b border-gray-700 hover:bg-gray-700">
+                                                <td class="px-6 py-4 font-medium"><?php echo htmlspecialchars($vaccine['vaccine_name']); ?></td>
+                                                <td class="px-6 py-4"><?php echo htmlspecialchars($vaccine['dose_number']); ?></td>
+                                                <td class="px-6 py-4"><?php echo htmlspecialchars($vaccine['scheduled_date']); ?></td>
+                                                <td class="px-6 py-4"><?php echo htmlspecialchars($vaccine['notes'] ?? ''); ?></td>
+                                                <td class="px-6 py-4">
+                                                    <button class="record-scheduled-btn text-green-400 hover:text-green-300 transition-colors"
+                                                            data-vaccine="<?php echo htmlspecialchars($vaccine['vaccine_name']); ?>"
+                                                            data-dose="<?php echo htmlspecialchars($vaccine['dose_number']); ?>"
+                                                            data-date="<?php echo htmlspecialchars($vaccine['scheduled_date']); ?>">
+                                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                                                  d="M5 13l4 4L19 7"></path>
+                                                        </svg>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Missed Vaccines Tab -->
+                    <div id="missed-vaccines" class="tab-pane hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left text-gray-300">
+                                <thead class="text-xs uppercase bg-gray-700 text-gray-300">
+                                    <tr>
+                                        <th scope="col" class="px-6 py-3">Vaccine</th>
+                                        <th scope="col" class="px-6 py-3">Dose</th>
+                                        <th scope="col" class="px-6 py-3">Scheduled Date</th>
+                                        <th scope="col" class="px-6 py-3">Notes</th>
+                                        <th scope="col" class="px-6 py-3">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (empty($missedVaccines)): ?>
+                                        <tr class="border-b border-gray-700">
+                                            <td colspan="5" class="px-6 py-4 text-center text-gray-400">No missed vaccines found.</td>
+                                        </tr>
+                                    <?php else: ?>
+                                        <?php foreach ($missedVaccines as $vaccine): ?>
+                                            <tr class="border-b border-gray-700 hover:bg-gray-700">
+                                                <td class="px-6 py-4 font-medium"><?php echo htmlspecialchars($vaccine['vaccine_name']); ?></td>
+                                                <td class="px-6 py-4"><?php echo htmlspecialchars($vaccine['dose_number']); ?></td>
+                                                <td class="px-6 py-4"><?php echo htmlspecialchars($vaccine['scheduled_date']); ?></td>
+                                                <td class="px-6 py-4"><?php echo htmlspecialchars($vaccine['notes'] ?? ''); ?></td>
+                                                <td class="px-6 py-4 flex space-x-2">
+                                                    <button class="reschedule-btn text-blue-400 hover:text-blue-300 transition-colors"
+                                                            data-vaccine="<?php echo htmlspecialchars($vaccine['vaccine_name']); ?>"
+                                                            data-dose="<?php echo htmlspecialchars($vaccine['dose_number']); ?>">
+                                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                                                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                                        </svg>
+                                                    </button>
+                                                    <button class="record-missed-btn text-green-400 hover:text-green-300 transition-colors"
+                                                            data-vaccine="<?php echo htmlspecialchars($vaccine['vaccine_name']); ?>"
+                                                            data-dose="<?php echo htmlspecialchars($vaccine['dose_number']); ?>">
+                                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                                                  d="M5 13l4 4L19 7"></path>
+                                                        </svg>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div>
-            <h3 class="font-semibold mb-1">Unable to Record Vaccine</h3>
-            <p class="text-sm"><?php echo htmlspecialchars($error); ?></p>
-        </div>
-        <button onclick="dismissError()" class="ml-4 text-white hover:text-red-100">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-        </button>
     </div>
 
     <script>
-        // Add this to your existing script section or create a new one
-        function dismissError() {
-            const errorNotification = document.getElementById('errorNotification');
-            if (errorNotification) {
-                errorNotification.classList.replace('animate__fadeInRight', 'animate__fadeOutRight');
-                setTimeout(() => {
-                    errorNotification.remove();
-                }, 1000);
-            }
-        }
-
-        // Auto-dismiss error after 5 seconds
-        if (document.getElementById('errorNotification')) {
-            setTimeout(() => {
-                dismissError();
-            }, 5000);
-        }
-    </script>
-    <?php endif; ?>
-
-    <!-- Scripts -->
-    <script>
-        // Edit Modal Functionality
-        const editModal = document.getElementById('editModal');
-        const showEditModal = document.getElementById('showEditModal');
-        const closeEditModal = document.getElementById('closeEditModal');
-        const modalBackdrop = document.getElementById('modalBackdrop');
-
-        function toggleModal(show) {
-            editModal.classList.toggle('hidden', !show);
-        }
-
-        showEditModal.addEventListener('click', () => toggleModal(true));
-        closeEditModal.addEventListener('click', () => toggleModal(false));
-        modalBackdrop.addEventListener('click', () => toggleModal(false));
-
-        // Close modal on escape key
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') toggleModal(false);
-        });
-
-        function togglePersonalEdit() {
-            const viewMode = document.getElementById('personal-view');
-            const editMode = document.getElementById('personal-edit');
-            viewMode.classList.toggle('hidden');
-            editMode.classList.toggle('hidden');
-        }
-
-        function toggleGuardianEdit() {
-            const viewMode = document.getElementById('guardian-view');
-            const editMode = document.getElementById('guardian-edit');
-            viewMode.classList.toggle('hidden');
-            editMode.classList.toggle('hidden');
-        }
-
-        function toggleMedicalEdit() {
-            const viewMode = document.getElementById('medical-view');
-            const editMode = document.getElementById('medical-edit');
-            viewMode.classList.toggle('hidden');
-            editMode.classList.toggle('hidden');
-        }
-
         document.addEventListener('DOMContentLoaded', function() {
-            const vaccineSelect = document.getElementById('vaccine_select');
-            const doseInput = document.getElementById('dose_number');
-            const doseHelpText = document.getElementById('dose_help_text');
-            const doseMaxIndicator = document.getElementById('dose_max_indicator');
-            const takenDosesInfo = document.getElementById('taken_doses_info');
+            // Tab functionality
+            const tabLinks = document.querySelectorAll('.tab-link');
+            const tabPanes = document.querySelectorAll('.tab-pane');
             
-            // Store taken vaccines data
-            const takenVaccines = <?php echo json_encode($takenVaccines); ?>;
-            
-            if (vaccineSelect && doseInput) {
-                vaccineSelect.addEventListener('change', function() {
-                    const selectedOption = this.options[this.selectedIndex];
-                    const maxDoses = parseInt(selectedOption.dataset.maxDoses) || 0;
-                    const description = selectedOption.dataset.description;
-                    const targetDisease = selectedOption.dataset.targetDisease;
-                    const takenDoses = parseInt(selectedOption.dataset.takenDoses) || 0;
-                    const vaccineName = selectedOption.value;
-
-                    // Update dose input constraints
-                    doseInput.max = maxDoses;
-                    doseMaxIndicator.textContent = maxDoses > 0 ? `/ ${maxDoses}` : '';
-
-                    // Show vaccine information
-                    if (description || targetDisease) {
-                        vaccineInfo.classList.remove('hidden');
-                        vaccineDescription.textContent = description;
-                        vaccineTarget.textContent = targetDisease ? `Protects against: ${targetDisease}` : '';
-                    } else {
-                        vaccineInfo.classList.add('hidden');
-                    }
-
-                    // Update dose help text
-                    if (maxDoses > 0) {
-                        doseHelpText.textContent = `This vaccine requires ${maxDoses} dose${maxDoses > 1 ? 's' : ''} in total`;
-                            doseHelpText.classList.remove('hidden');
-                        } else {
-                            doseHelpText.classList.add('hidden');
-                    }
-
-                    // Show taken doses information
-                    if (takenDoses > 0) {
-                        const takenDosesArray = takenVaccines[vaccineName] || [];
-                        takenDosesInfo.textContent = `Previously taken doses: ${takenDosesArray.join(', ')}`;
-                            takenDosesInfo.classList.remove('hidden');
-                        
-                        // Set default dose number to next required dose
-                        const nextDose = takenDosesArray.length + 1;
-                        if (nextDose <= maxDoses) {
-                            doseInput.value = nextDose;
-                        }
-                        } else {
-                            takenDosesInfo.classList.add('hidden');
-                        doseInput.value = 1;
-                    }
+            tabLinks.forEach(link => {
+                link.addEventListener('click', function() {
+                    // Remove active class from all tabs
+                    tabLinks.forEach(tab => {
+                        tab.classList.remove('border-blue-500', 'text-white');
+                        tab.classList.add('border-transparent');
+                    });
+                    
+                    // Add active class to clicked tab
+                    this.classList.remove('border-transparent');
+                    this.classList.add('border-blue-500', 'text-white');
+                    
+                    // Hide all tab panes
+                    tabPanes.forEach(pane => {
+                        pane.classList.add('hidden');
+                    });
+                    
+                    // Show the corresponding tab pane
+                    const tabId = this.getAttribute('data-tab');
+                    document.getElementById(tabId).classList.remove('hidden');
                 });
-
-                // Validate dose number on input
-                doseInput.addEventListener('input', function() {
-                    const selectedOption = vaccineSelect.options[vaccineSelect.selectedIndex];
-                    const maxDoses = parseInt(selectedOption.dataset.maxDoses) || 0;
-                    const value = parseInt(this.value) || 0;
-
-                    if (value > maxDoses) {
-                        this.value = maxDoses;
-                    } else if (value < 1) {
-                        this.value = 1;
-                    }
-                });
-            }
+            });
             
-            // Similar enhancements for the scheduling form
-            const scheduleVaccineSelect = document.getElementById('schedule_vaccine_select');
-            const scheduleDoseInput = document.getElementById('schedule_dose_number');
-            const scheduleDoseMaxIndicator = document.getElementById('schedule_dose_max_indicator');
-            const scheduleTakenDosesInfo = document.getElementById('schedule_taken_doses_info');
+            // Record Vaccine Form Toggle
+            const recordVaccineBtn = document.getElementById('recordVaccineBtn');
+            const recordVaccineForm = document.getElementById('recordVaccineForm');
+            const cancelRecordBtn = document.getElementById('cancelRecordBtn');
             
-            if (scheduleVaccineSelect && scheduleDoseInput) {
-                scheduleVaccineSelect.addEventListener('change', function() {
-                    if (!this.value) return;
+            recordVaccineBtn.addEventListener('click', function() {
+                recordVaccineForm.classList.remove('hidden');
+                scheduleVaccineForm.classList.add('hidden');
+                recordVaccineForm.scrollIntoView({ behavior: 'smooth' });
+            });
+            
+            cancelRecordBtn.addEventListener('click', function() {
+                recordVaccineForm.classList.add('hidden');
+            });
+            
+            // Schedule Vaccine Form Toggle
+            const scheduleVaccineBtn = document.getElementById('scheduleVaccineBtn');
+            const scheduleVaccineForm = document.getElementById('scheduleVaccineForm');
+            const cancelScheduleBtn = document.getElementById('cancelScheduleBtn');
+            
+            scheduleVaccineBtn.addEventListener('click', function() {
+                scheduleVaccineForm.classList.remove('hidden');
+                recordVaccineForm.classList.add('hidden');
+                scheduleVaccineForm.scrollIntoView({ behavior: 'smooth' });
+            });
+            
+            cancelScheduleBtn.addEventListener('click', function() {
+                scheduleVaccineForm.classList.add('hidden');
+            });
+            
+            // Record Scheduled Vaccine buttons
+            const recordScheduledBtns = document.querySelectorAll('.record-scheduled-btn');
+            
+            recordScheduledBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const vaccine = this.getAttribute('data-vaccine');
+                    const dose = this.getAttribute('data-dose');
+                    const date = this.getAttribute('data-date');
                     
-                    const maxDoses = parseInt(this.options[this.selectedIndex].dataset.maxDoses) || 1;
-                    const vaccineName = this.value;
+                    // Fill in the record form
+                    document.getElementById('vaccine_name').value = vaccine;
+                    document.getElementById('dose_number').value = dose;
+                    document.getElementById('date_taken').value = new Date().toISOString().split('T')[0];
                     
-                    // Set max attribute on dose input
-                    scheduleDoseInput.max = maxDoses;
-                    
-                    // Show max doses indicator
-                    if (scheduleDoseMaxIndicator) {
-                        scheduleDoseMaxIndicator.textContent = `(max: ${maxDoses})`;
-                        scheduleDoseMaxIndicator.classList.remove('hidden');
-                    }
-                    
-                    // Show already taken doses info and disable taken doses
-                    if (scheduleTakenDosesInfo) {
-                        if (takenVaccines[vaccineName] && takenVaccines[vaccineName].length > 0) {
-                            const takenDosesArray = takenVaccines[vaccineName].map(d => parseInt(d)).sort((a, b) => a - b);
-                            scheduleTakenDosesInfo.textContent = `Doses already administered: ${takenDosesArray.join(', ')}`;
-                            scheduleTakenDosesInfo.classList.remove('hidden');
-                            
-                            // Set the dose input to the next available dose
-                            let nextDose = 1;
-                            while (takenDosesArray.includes(nextDose) && nextDose <= maxDoses) {
-                                nextDose++;
-                            }
-                            if (nextDose <= maxDoses) {
-                                scheduleDoseInput.value = nextDose;
-                            }
-                        } else {
-                            scheduleTakenDosesInfo.classList.add('hidden');
-                            scheduleDoseInput.value = 1;
-                        }
-                    }
+                    // Show the form
+                    recordVaccineForm.classList.remove('hidden');
+                    scheduleVaccineForm.classList.add('hidden');
+                    recordVaccineForm.scrollIntoView({ behavior: 'smooth' });
                 });
-            }
+            });
+            
+            // Record Missed Vaccine buttons
+            const recordMissedBtns = document.querySelectorAll('.record-missed-btn');
+            
+            recordMissedBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const vaccine = this.getAttribute('data-vaccine');
+                    const dose = this.getAttribute('data-dose');
+                    
+                    // Fill in the record form
+                    document.getElementById('vaccine_name').value = vaccine;
+                    document.getElementById('dose_number').value = dose;
+                    document.getElementById('date_taken').value = new Date().toISOString().split('T')[0];
+                    
+                    // Show the form
+                    recordVaccineForm.classList.remove('hidden');
+                    scheduleVaccineForm.classList.add('hidden');
+                    recordVaccineForm.scrollIntoView({ behavior: 'smooth' });
+                });
+            });
+            
+            // Reschedule buttons
+            const rescheduleBtns = document.querySelectorAll('.reschedule-btn');
+            
+            rescheduleBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const vaccine = this.getAttribute('data-vaccine');
+                    const dose = this.getAttribute('data-dose');
+                    
+                    // Fill in the schedule form
+                    document.getElementById('schedule_vaccine_name').value = vaccine;
+                    document.getElementById('schedule_dose_number').value = dose;
+                    
+                    // Set date to one week from today
+                    const nextWeek = new Date();
+                    nextWeek.setDate(nextWeek.getDate() + 7);
+                    document.getElementById('scheduled_date').value = nextWeek.toISOString().split('T')[0];
+                    
+                    // Show the form
+                    scheduleVaccineForm.classList.remove('hidden');
+                    recordVaccineForm.classList.add('hidden');
+                    scheduleVaccineForm.scrollIntoView({ behavior: 'smooth' });
+                });
+            });
+            
+            // Auto-close alerts after 5 seconds
+            setTimeout(() => {
+                const alerts = document.querySelectorAll('.bg-green-900, .bg-red-900');
+                alerts.forEach(alert => {
+                    alert.classList.add('animate__fadeOut');
+                    setTimeout(() => {
+                        alert.style.display = 'none';
+                    }, 500);
+                });
+            }, 5000);
         });
     </script>
 </body>
